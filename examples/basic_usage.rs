@@ -1,4 +1,5 @@
-use bedrock_agent::AgentBuilder;
+use bedrock_agent::Agent;
+use bedrock_config::AgentConfig;
 use bedrock_core::{Agent as AgentTrait, Task};
 
 #[tokio::main]
@@ -7,10 +8,13 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
     // Build agent from config file
-    let agent = AgentBuilder::new()
-        .with_config_file("examples/agent.yaml")
-        .build()
-        .await?;
+    let agent = match AgentConfig::from_yaml("examples/agent.yaml") {
+        Ok(config) => Agent::new(config).await?,
+        Err(_) => {
+            println!("Using default configuration");
+            Agent::new(AgentConfig::default()).await?
+        }
+    };
 
     // Create a task
     let task = Task::new("Write a simple hello world program in Rust")

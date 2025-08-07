@@ -1,8 +1,10 @@
+mod env_substitution;
+
 use bedrock_core::{BedrockError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::env;
 use std::path::{Path, PathBuf};
+use env_substitution::substitute_env_vars;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentConfig {
@@ -24,6 +26,17 @@ pub struct AgentSettings {
     pub temperature: f32,
     #[serde(default = "default_max_tokens")]
     pub max_tokens: usize,
+}
+
+impl AgentSettings {
+    pub fn get_system_prompt(&self) -> String {
+        format!(
+            "You are {}, an AI assistant with access to various tools. \
+            You can execute commands, read and write files, and search through codebases. \
+            Always be helpful and provide clear explanations for your actions.",
+            self.name
+        )
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,35 +101,49 @@ pub struct PathSettings {
 impl AgentConfig {
     pub fn from_yaml(path: impl AsRef<Path>) -> Result<Self> {
         let content = std::fs::read_to_string(path.as_ref())
-            .map_err(|e| BedrockError::ConfigError(format!("Failed to read config file: {}", e)))?;
+            .map_err(|e| BedrockError::ConfigError(format!("Failed to read config file: {e}")))?;
         
-        let mut config: AgentConfig = serde_yaml::from_str(&content)
-            .map_err(|e| BedrockError::ConfigError(format!("Failed to parse YAML: {}", e)))?;
+        // Parse YAML to serde_json::Value for env var substitution
+        let yaml_value: serde_yaml::Value = serde_yaml::from_str(&content)
+            .map_err(|e| BedrockError::ConfigError(format!("Failed to parse YAML: {e}")))?;
         
-        config.expand_env_vars();
+        // Convert to JSON value for processing
+        let mut json_value = serde_json::to_value(yaml_value)
+            .map_err(|e| BedrockError::ConfigError(format!("Failed to convert YAML to JSON: {e}")))?;
+        
+        // Apply environment variable substitution
+        substitute_env_vars(&mut json_value)?;
+        
+        // Convert back to config struct
+        let config: Self = serde_json::from_value(json_value)
+            .map_err(|e| BedrockError::ConfigError(format!("Failed to deserialize config: {e}")))?;
+        
         config.validate()?;
         
         Ok(config)
     }
 
-    pub fn from_str(yaml: &str) -> Result<Self> {
-        let mut config: AgentConfig = serde_yaml::from_str(yaml)
-            .map_err(|e| BedrockError::ConfigError(format!("Failed to parse YAML: {}", e)))?;
+    pub fn from_yaml_str(yaml: &str) -> Result<Self> {
+        // Parse YAML to serde_json::Value for env var substitution
+        let yaml_value: serde_yaml::Value = serde_yaml::from_str(yaml)
+            .map_err(|e| BedrockError::ConfigError(format!("Failed to parse YAML: {e}")))?;
         
-        config.expand_env_vars();
+        // Convert to JSON value for processing
+        let mut json_value = serde_json::to_value(yaml_value)
+            .map_err(|e| BedrockError::ConfigError(format!("Failed to convert YAML to JSON: {e}")))?;
+        
+        // Apply environment variable substitution
+        substitute_env_vars(&mut json_value)?;
+        
+        // Convert back to config struct
+        let config: Self = serde_json::from_value(json_value)
+            .map_err(|e| BedrockError::ConfigError(format!("Failed to deserialize config: {e}")))?;
+        
         config.validate()?;
         
         Ok(config)
     }
 
-    fn expand_env_vars(&mut self) {
-        if let Ok(home_dir) = env::var("HOME_DIR") {
-            self.paths.home_dir = PathBuf::from(home_dir);
-        }
-        if let Ok(workspace_dir) = env::var("WORKSPACE_DIR") {
-            self.paths.workspace_dir = PathBuf::from(workspace_dir);
-        }
-    }
 
     fn validate(&self) -> Result<()> {
         if self.agent.name.is_empty() {
@@ -135,8 +162,8 @@ impl AgentConfig {
     }
 
     pub fn default_config_path() -> PathBuf {
-        let home_dir = env::var("HOME_DIR")
-            .unwrap_or_else(|_| env::var("HOME").unwrap_or_else(|_| ".".to_string()));
+        let home_dir = std::env::var("HOME_DIR")
+            .unwrap_or_else(|_| std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
         PathBuf::from(home_dir).join(".bedrock-agent").join("agent.yaml")
     }
 }
@@ -161,6 +188,48 @@ impl Default for PathSettings {
     }
 }
 
+impl Default for AgentConfig {
+    fn default() -> Self {
+        Self {
+            agent: AgentSettings {
+                name: "bedrock-agent".to_string(),
+                model: "anthropic.claude-3-5-sonnet-20241022-v2:0".to_string(),
+                temperature: default_temperature(),
+                max_tokens: default_max_tokens(),
+            },
+            aws: AwsSettings {
+                region: "us-east-1".to_string(),
+                profile: None,
+                role_arn: None,
+            },
+            tools: ToolSettings {
+                allowed: vec![
+                    "fs_read".to_string(),
+                    "fs_write".to_string(),
+                    "fs_list".to_string(),
+                    "grep".to_string(),
+                    "find".to_string(),
+                ],
+                permissions: HashMap::new(),
+            },
+            pricing: {
+                let mut pricing = HashMap::new();
+                pricing.insert(
+                    "anthropic.claude-3-5-sonnet-20241022-v2:0".to_string(),
+                    ModelPricing {
+                        input_per_1k: 0.003,
+                        output_per_1k: 0.015,
+                        currency: default_currency(),
+                    },
+                );
+                pricing
+            },
+            limits: LimitSettings::default(),
+            paths: PathSettings::default(),
+        }
+    }
+}
+
 fn default_temperature() -> f32 { 0.7 }
 fn default_max_tokens() -> usize { 4096 }
 fn default_currency() -> String { "USD".to_string() }
@@ -169,13 +238,13 @@ fn default_max_rpm() -> usize { 100 }
 fn default_alert_threshold() -> f64 { 0.8 }
 
 fn default_home_dir() -> PathBuf {
-    env::var("HOME_DIR")
-        .unwrap_or_else(|_| env::var("HOME").unwrap_or_else(|_| ".".to_string()))
+    std::env::var("HOME_DIR")
+        .unwrap_or_else(|_| std::env::var("HOME").unwrap_or_else(|_| ".".to_string()))
         .into()
 }
 
 fn default_workspace_dir() -> PathBuf {
-    env::var("WORKSPACE_DIR")
+    std::env::var("WORKSPACE_DIR")
         .unwrap_or_else(|_| "./workspace".to_string())
         .into()
 }
@@ -212,7 +281,7 @@ pricing:
     output_per_1k: 0.015
 "#;
 
-        let config = AgentConfig::from_str(yaml).unwrap();
+        let config = AgentConfig::from_yaml_str(yaml).unwrap();
         assert_eq!(config.agent.name, "test-agent");
         assert_eq!(config.agent.model, "claude-3-sonnet");
         assert_eq!(config.agent.temperature, 0.5);
@@ -235,7 +304,7 @@ tools:
 pricing: {}
 "#;
 
-        let result = AgentConfig::from_str(yaml);
+        let result = AgentConfig::from_yaml_str(yaml);
         assert!(result.is_err());
     }
 }

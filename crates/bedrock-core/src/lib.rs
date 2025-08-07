@@ -32,7 +32,8 @@ pub struct TaskResult {
     pub task_id: Uuid,
     pub status: TaskStatus,
     pub summary: String,
-    pub conversation: Vec<Message>,
+    // Store conversation as JSON since AWS Message types don't impl Serialize
+    pub conversation: Vec<serde_json::Value>,
     pub token_stats: TokenStatistics,
     pub cost: CostDetails,
     pub started_at: DateTime<Utc>,
@@ -49,20 +50,9 @@ pub enum TaskStatus {
     Cancelled,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Message {
-    pub role: MessageRole,
-    pub content: String,
-    pub timestamp: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum MessageRole {
-    System,
-    User,
-    Assistant,
-    Tool,
-}
+// Message types are now handled by aws_sdk_bedrockruntime::types::Message
+// We no longer define custom Message types here to avoid confusion
+// The AWS SDK Message type will be used directly in bedrock-client and bedrock-task
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TokenStatistics {

@@ -10,7 +10,10 @@ description = "YAML-based configuration management for Bedrock CLI Agent"
 [dependencies]
 bedrock-core = { path = "../bedrock-core" }
 serde = { workspace = true }
+serde_json = { workspace = true }
 serde_yaml = { workspace = true }
+regex = "1.11"
+once_cell = "1.20"
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 

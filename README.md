@@ -1,139 +1,166 @@
 # Bedrock CLI Agent
 
-A modular Rust-based agent for interacting with AWS Bedrock LLM with comprehensive tooling capabilities, MCP integration, and cost tracking.
+A Rust-based AWS Bedrock LLM agent with built-in tools, caching, and MCP integration support.
 
 ## Features
 
-- 🚀 **AWS Bedrock Integration**: Full support for AWS Bedrock conversation APIs with streaming
-- 🔧 **Modular Tool System**: Extensible tool framework with built-in file operations and search
-- 🌐 **MCP Protocol Support**: Integrate with MCP servers via stdio and SSE transports
-- 💾 **Intelligent Caching**: LRU cache with persistence to reduce API calls
-- 📊 **Cost Tracking**: Real-time token usage and cost calculation
-- 🔒 **Security First**: Path validation, permission system, and sandboxed operations
-- 📈 **Observability**: Comprehensive metrics, structured logging, and tracing
+- ✅ AWS Bedrock LLM interaction via Converse API
+- ✅ Full streaming support with tool execution
+- ✅ AWS credential chain support (profile, IRSA, environment variables)
+- ✅ Built-in file operation tools (read, write, list)
+- ✅ Search tools (grep, find, ripgrep)
+- ✅ Bash command execution with safety controls
+- ✅ Task processing with UUID-based tracking
+- ✅ Token statistics and cost tracking
+- ✅ YAML-based configuration with environment variable substitution
+- ✅ Modular crate architecture
+- ✅ Metrics collection and monitoring
+- 🚧 Response caching (LRU)
+- 🚧 MCP tool integration (stdio/SSE)
+- 🚧 Rate limiting
 
-## Architecture
-
-```
-bedrock-agent/
-├── crates/
-│   ├── bedrock-core/     # Core types and traits
-│   ├── bedrock-client/   # AWS Bedrock client
-│   ├── bedrock-tools/    # Reusable tool system
-│   ├── bedrock-mcp/      # MCP integration
-│   ├── bedrock-task/     # Task processing engine
-│   ├── bedrock-config/   # Configuration management
-│   ├── bedrock-metrics/  # Token tracking & costs
-│   └── bedrock-agent/    # Main agent orchestration
-```
-
-## Quick Start
-
-### Installation
+## Installation
 
 ```bash
+# Build from source
 cargo build --release
+
+# Run directly
+cargo run -- --help
 ```
 
-### Configuration
+## Configuration
 
-Create an `agent.yaml` file in your `$HOME_DIR`:
+Create a `config.yaml` file with environment variable support:
 
 ```yaml
 agent:
-  name: "my-bedrock-agent"
-  model: "anthropic.claude-3-sonnet"
-  
+  name: "bedrock-agent"
+  model: "anthropic.claude-3-5-sonnet-20241022-v2:0"
+  max_tokens: 4096
+  temperature: 0.7
+
 aws:
   region: "us-east-1"
-  profile: "default"
-  
+  # Optional: profile: "my-profile"
+
 tools:
   allowed:
     - fs_read
     - fs_write
-  permissions:
-    fs_write:
-      constraint: "workspace_only"
-      
+    - fs_list
+    - grep
+    - find
+    - execute_bash
+
+paths:
+  home_dir: "${HOME_DIR:-~/.bedrock-agent}"
+  workspace_dir: "${WORKSPACE_DIR:-./workspace}"
+
 pricing:
-  claude-3-sonnet:
+  "anthropic.claude-3-5-sonnet-20241022-v2:0":
     input_per_1k: 0.003
     output_per_1k: 0.015
+    currency: "USD"
 ```
 
-### Basic Usage
+## Usage
 
-```rust
-use bedrock_agent::{Agent, Task};
-use uuid::Uuid;
+### Execute a single task
+```bash
+# Basic task execution
+bedrock-agent task --prompt "List all Rust files in the current directory"
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    // Initialize agent
-    let agent = Agent::from_config("agent.yaml").await?;
-    
-    // Create a task
-    let task = Task {
-        task_id: Uuid::new_v4(),
-        context: "You are a helpful assistant".to_string(),
-        prompt: "Write a hello world program in Rust".to_string(),
-        created_at: Utc::now(),
-    };
-    
-    // Execute task
-    let result = agent.execute_task(task).await?;
-    
-    // Print results
-    println!("Task ID: {}", result.task_id);
-    println!("Summary: {}", result.summary);
-    println!("Tokens: {}", result.token_stats.total_tokens);
-    println!("Cost: ${:.4}", result.cost.total_cost);
-    
-    Ok(())
-}
+# With context
+bedrock-agent task --prompt "Analyze this code" --context "Focus on performance"
+
+# With streaming (full tool support)
+bedrock-agent task --prompt "Write a story" --stream
+
+# Complex multi-tool task
+bedrock-agent task --prompt "Create a hello.txt file and then read it back" --stream
+```
+
+### Interactive chat mode
+```bash
+bedrock-agent chat
+
+# With custom system prompt
+bedrock-agent chat --system "You are a code reviewer"
+```
+
+### List available tools
+```bash
+bedrock-agent tools
+```
+
+### Test AWS connectivity
+```bash
+bedrock-agent test
 ```
 
 ## Environment Variables
 
-- `HOME_DIR`: Directory for agent configuration and cache (default: `~/.bedrock-agent`)
-- `WORKSPACE_DIR`: Directory for file operations (default: `./workspace`)
-- `AWS_PROFILE`: AWS profile to use for authentication
-- `AWS_REGION`: AWS region for Bedrock service
+- `HOME_DIR`: Agent configuration and cache directory (default: `~/.bedrock-agent`)
+- `WORKSPACE_DIR`: Working directory for file operations (default: `./workspace`)
+- `AWS_PROFILE`: AWS profile to use
+- `AWS_REGION`: AWS region (overrides config)
 
-## Development Status
+## Architecture
 
-This project is under active development. See our [GitHub Issues](https://github.com/maddinenisri/bedrock-cli-agent/issues) for the current roadmap.
+The project is organized into modular crates:
 
-### Phase 1 (Weeks 1-2)
-- Core Infrastructure ✅
-- Basic Bedrock Integration 🚧
+- `bedrock-core`: Core types and traits
+- `bedrock-client`: AWS Bedrock client implementation with streaming support
+- `bedrock-config`: Configuration management with env var substitution
+- `bedrock-tools`: Built-in tool implementations (fs, search, bash)
+- `bedrock-task`: Task execution and queue management
+- `bedrock-agent`: Main agent orchestration with tool execution loop
+- `bedrock-metrics`: Token tracking, cost calculation, and metrics collection
+- `bedrock-mcp`: MCP integration (planned)
 
-### Phase 2 (Weeks 3-4)
-- Tool System 📋
-- MCP Integration 📋
+## Development
 
-### Phase 3 (Weeks 5-6)
-- Task Processing 📋
-- Advanced Features 📋
+```bash
+# Run tests
+cargo test
 
-### Phase 4 (Week 7)
-- Observability 📋
-- Testing & Documentation 📋
+# Run with verbose logging
+RUST_LOG=debug cargo run -- test
 
-## Contributing
+# Format code
+cargo fmt
 
-Contributions are welcome! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+# Check for issues
+cargo clippy
+```
+
+## AWS Credentials
+
+The agent supports the standard AWS credential chain:
+
+1. Environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`)
+2. AWS profile (`~/.aws/credentials`)
+3. IAM role (for EC2/ECS/Lambda)
+4. IRSA (for EKS)
+
+## Cost Tracking
+
+The agent tracks token usage and estimates costs based on configured pricing:
+
+- Input tokens
+- Output tokens
+- Total cost per request
+- Model-specific pricing
+
+## Security
+
+- File operations are restricted to `WORKSPACE_DIR`
+- Bash command execution with configurable permissions
+- Tool inputs are validated
+- Sensitive data is not logged
+- Environment variable substitution for secure configuration
 
 ## License
 
-This project is licensed under either of
-
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
-- MIT license ([LICENSE-MIT](LICENSE-MIT))
-
-at your option.
-
-## Acknowledgments
-
-This project is inspired by and leverages patterns from the [rust-bedrock-api](https://github.com/user/rust-bedrock-api) reference implementation.
+MIT OR Apache-2.0

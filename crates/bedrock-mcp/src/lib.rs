@@ -119,7 +119,7 @@ impl McpClient {
 
         let tools: Vec<ToolInfo> = serde_json::from_value(
             response.result.unwrap_or_else(|| serde_json::json!([]))
-        ).map_err(|e| BedrockError::SerializationError(e))?;
+        ).map_err(BedrockError::SerializationError)?;
 
         Ok(tools)
     }
