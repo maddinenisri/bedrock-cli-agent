@@ -176,14 +176,26 @@ impl TaskExecutor {
 
         // Build tool definitions
         let all_tools = self.tool_registry.get_all();
+        debug!("Building tool definitions for {} tools", all_tools.len());
+        
         let tool_definitions: Vec<ToolDefinition> = all_tools
             .into_iter()
-            .map(|tool| ToolDefinition {
-                name: tool.name().to_string(),
-                description: tool.description().to_string(),
-                input_schema: tool.schema(),
+            .map(|tool| {
+                debug!("Processing tool: {}", tool.name());
+                let schema = tool.schema();
+                debug!("Got schema for tool: {}, size: {} bytes", 
+                    tool.name(), 
+                    serde_json::to_string(&schema).unwrap_or_default().len()
+                );
+                ToolDefinition {
+                    name: tool.name().to_string(),
+                    description: tool.description().to_string(),
+                    input_schema: schema,
+                }
             })
             .collect();
+        
+        debug!("Built {} tool definitions", tool_definitions.len());
 
         // Initialize conversation with user prompt
         let user_message = Message::builder()
