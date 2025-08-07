@@ -1,5 +1,5 @@
 use anyhow::Result;
-use bedrock_agent::{Agent, AgentBuilder};
+use bedrock_agent::Agent;
 use bedrock_core::{Agent as AgentTrait, Task};
 use std::env;
 use tracing::{error, info};
@@ -13,13 +13,18 @@ async fn main() -> Result<()> {
     
     let args: Vec<String> = env::args().collect();
     
-    let mut agent = if args.len() > 1 {
-        AgentBuilder::new()
-            .with_config_file(&args[1])
-            .build()
-            .await?
+    let agent = if args.len() > 1 {
+        Agent::from_config_file(&args[1]).await?
     } else {
-        Agent::from_default_config().await?
+        // Use default config file or create with default config
+        match Agent::from_config_file("config.yaml").await {
+            Ok(agent) => agent,
+            Err(_) => {
+                info!("No config.yaml found, using default configuration");
+                use bedrock_config::AgentConfig;
+                Agent::new(AgentConfig::default()).await?
+            }
+        }
     };
     
     if args.len() > 2 {
@@ -58,8 +63,7 @@ async fn main() -> Result<()> {
         println!("  {} agent.yaml \"Write a hello world program in Rust\"", args[0]);
     }
     
-    agent.shutdown().await?;
-    info!("Agent shutdown complete");
+    info!("Agent execution complete");
     
     Ok(())
 }

@@ -1,0 +1,81 @@
+agent:
+  name: "bedrock-assistant"
+  model: "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
+  max_tokens: 4096
+  temperature: 0.7
+  max_retries: 3
+  timeout_seconds: 300
+
+aws:
+  region: "us-east-1"
+  # Optional: Use a specific AWS profile
+  # profile: "my-profile"
+  # Optional: Use a specific role ARN (for IRSA)
+  # role_arn: "arn:aws:iam::123456789012:role/my-role"
+
+tools:
+  allowed:
+    - fs_read
+    - fs_write
+    - fs_list
+    - grep
+    - find
+    - rg
+    - execute_bash
+  permissions: {}
+  max_file_size: 10485760  # 10MB
+  allowed_extensions:
+    - .txt
+    - .md
+    - .json
+    - .yaml
+    - .yml
+    - .toml
+    - .rs
+    - .py
+    - .js
+    - .ts
+    - .sh
+    - .bash
+    - .zsh
+    - .go
+    - .java
+    - .cpp
+    - .c
+    - .h
+    - .hpp
+
+cache:
+  max_size: 100
+  ttl_seconds: 3600
+
+rate_limit:
+  max_requests_per_minute: 60
+  max_tokens_per_minute: 100000
+
+pricing:
+  "us.anthropic.claude-3-5-sonnet-20241022-v2:0":
+    input_per_1k: 0.003
+    output_per_1k: 0.015
+    currency: "USD"
+  "anthropic.claude-3-5-haiku-20241022-v1:0":
+    input_per_1k: 0.0008
+    output_per_1k: 0.004
+    currency: "USD"
+  "anthropic.claude-3-opus-20240229-v1:0":
+    input_per_1k: 0.015
+    output_per_1k: 0.075
+    currency: "USD"
+
+limits:
+  max_conversation_turns: 20
+  max_input_length: 100000
+  max_output_length: 10000
+  max_concurrent_tasks: 10
+  max_queue_size: 100
+
+paths:
+  home_dir: "${HOME}/.bedrock-agent"
+  workspace_dir: "${WORKSPACE_DIR:-./workspace}"
+  cache_dir: "${HOME}/.bedrock-agent/cache"
+  logs_dir: "${HOME}/.bedrock-agent/logs"

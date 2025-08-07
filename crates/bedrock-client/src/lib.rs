@@ -1,10 +1,22 @@
 use aws_config::Region;
 use aws_sdk_bedrockruntime as bedrock;
+use aws_sdk_bedrockruntime::types::{
+    Message, StopReason, SystemContentBlock,
+    Tool, ToolConfiguration, ToolResultBlock, ToolSpecification, ToolUseBlock,
+    ToolInputSchema, ToolResultContentBlock,
+};
+use aws_smithy_types::Document;
 use bedrock_config::{AgentConfig, AwsSettings};
-use bedrock_core::{BedrockError, Message, MessageRole, Result, TokenStatistics};
+use bedrock_core::{BedrockError, Result};
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use std::sync::Arc;
 use tracing::{debug, info};
+
+pub mod ui;
+mod streaming;
+pub use ui::{display_tool_execution, display_tool_result, get_tool_display_name, get_tool_emoji};
+use streaming::process_stream_with_response;
 
 pub struct BedrockClient {
     client: bedrock::Client,
@@ -12,29 +24,50 @@ pub struct BedrockClient {
     config: Arc<AgentConfig>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConversationRequest {
-    pub model_id: String,
-    pub messages: Vec<Message>,
-    pub system_prompt: Option<String>,
-    pub max_tokens: Option<usize>,
-    pub temperature: Option<f32>,
+// For non-streaming responses
+#[derive(Debug)]
+pub struct ConverseResponse {
+    pub message: Message,
+    pub stop_reason: StopReason,
+    pub usage: Option<bedrock::types::TokenUsage>,
+}
+
+impl ConverseResponse {
+    pub fn has_tool_use(&self) -> bool {
+        matches!(self.stop_reason, StopReason::ToolUse)
+    }
+
+    pub fn get_tool_uses(&self) -> Vec<&ToolUseBlock> {
+        self.message
+            .content()
+            .iter()
+            .filter_map(|block| block.as_tool_use().ok())
+            .collect()
+    }
+
+    pub fn get_text_content(&self) -> String {
+        self.message
+            .content()
+            .iter()
+            .filter_map(|block| {
+                if let Ok(text) = block.as_text() {
+                    Some(text.to_string())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("")
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConversationResponse {
-    pub content: String,
-    pub role: MessageRole,
-    pub usage: TokenUsage,
-    pub stop_reason: Option<String>,
+pub struct ToolDefinition {
+    pub name: String,
+    pub description: String,
+    pub input_schema: Value,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct TokenUsage {
-    pub input_tokens: usize,
-    pub output_tokens: usize,
-    pub total_tokens: usize,
-}
 
 impl BedrockClient {
     pub async fn new(config: AgentConfig) -> Result<Self> {
@@ -70,74 +103,246 @@ impl BedrockClient {
         Ok(aws_config)
     }
 
-    pub async fn converse(&self, request: ConversationRequest) -> Result<ConversationResponse> {
-        let mut bedrock_messages = Vec::new();
-        
-        for msg in &request.messages {
-            let content = bedrock::types::ContentBlock::Text(msg.content.clone());
-            let role = match msg.role {
-                MessageRole::User => bedrock::types::ConversationRole::User,
-                MessageRole::Assistant => bedrock::types::ConversationRole::Assistant,
-                _ => continue,
-            };
-            
-            let bedrock_msg = bedrock::types::Message::builder()
-                .role(role)
-                .content(content)
-                .build()
-                .map_err(|e| BedrockError::Unknown(e.to_string()))?;
-            
-            bedrock_messages.push(bedrock_msg);
-        }
-
+    pub async fn converse(
+        &self,
+        model_id: &str,
+        messages: Vec<Message>,
+        system_prompt: Option<String>,
+        tools: Option<Vec<ToolDefinition>>,
+    ) -> Result<ConverseResponse> {
         let mut converse_request = self.client
             .converse()
-            .model_id(request.model_id.clone())
-            .set_messages(Some(bedrock_messages));
+            .model_id(model_id)
+            .set_messages(Some(messages));
 
-        if let Some(system_prompt) = request.system_prompt {
-            let system_content = bedrock::types::SystemContentBlock::Text(system_prompt);
+        if let Some(system_prompt) = system_prompt {
+            let system_content = SystemContentBlock::Text(system_prompt);
             converse_request = converse_request.system(system_content);
         }
 
         let inference_config = bedrock::types::InferenceConfiguration::builder()
-            .max_tokens(request.max_tokens.unwrap_or(self.config.agent.max_tokens) as i32)
-            .temperature(request.temperature.unwrap_or(self.config.agent.temperature))
+            .max_tokens(self.config.agent.max_tokens as i32)
+            .temperature(self.config.agent.temperature)
             .build();
 
         converse_request = converse_request.inference_config(inference_config);
 
+        if let Some(tools) = tools {
+            let tool_config = self.build_tool_config(tools)?;
+            converse_request = converse_request.tool_config(tool_config);
+        }
+
         let response = converse_request.send().await
-            .map_err(|e| BedrockError::Unknown(format!("Bedrock API error: {}", e)))?;
+            .map_err(|e| BedrockError::Unknown(format!("Bedrock API error: {e}")))?;
 
-        let content = response.output()
-            .and_then(|output| match output {
-                bedrock::types::ConverseOutput::Message(msg) => {
-                    msg.content().first().and_then(|block| match block {
-                        bedrock::types::ContentBlock::Text(text) => Some(text.clone()),
-                        _ => None,
-                    })
-                }
-                _ => None,
-            })
-            .unwrap_or_default();
+        let message = response.output()
+            .and_then(|output| output.as_message().ok())
+            .ok_or_else(|| BedrockError::Unknown("No message in response".into()))?
+            .clone();
 
-        let usage = response.usage()
-            .map(|u| TokenUsage {
-                input_tokens: u.input_tokens() as usize,
-                output_tokens: u.output_tokens() as usize,
-                total_tokens: u.total_tokens() as usize,
-            })
-            .unwrap_or_default();
+        let stop_reason = response.stop_reason().clone();
+        let usage = response.usage().cloned();
 
-        let stop_reason = Some(format!("{:?}", response.stop_reason()));
-
-        Ok(ConversationResponse {
-            content,
-            role: MessageRole::Assistant,
-            usage,
+        Ok(ConverseResponse {
+            message,
             stop_reason,
+            usage,
         })
+    }
+
+    pub async fn converse_stream(
+        &self,
+        model_id: &str,
+        messages: Vec<Message>,
+        system_prompt: Option<String>,
+        tools: Option<Vec<ToolDefinition>>,
+    ) -> Result<ConverseResponse> {
+        let mut converse_request = self.client
+            .converse_stream()
+            .model_id(model_id)
+            .set_messages(Some(messages));
+
+        if let Some(system_prompt) = system_prompt {
+            let system_content = SystemContentBlock::Text(system_prompt);
+            converse_request = converse_request.system(system_content);
+        }
+
+        let inference_config = bedrock::types::InferenceConfiguration::builder()
+            .max_tokens(self.config.agent.max_tokens as i32)
+            .temperature(self.config.agent.temperature)
+            .build();
+
+        converse_request = converse_request.inference_config(inference_config);
+
+        if let Some(tools) = tools {
+            let tool_config = self.build_tool_config(tools)?;
+            converse_request = converse_request.tool_config(tool_config);
+        }
+
+        let stream_output = converse_request.send().await
+            .map_err(|e| BedrockError::Unknown(format!("Bedrock streaming error: {e}")))?;
+
+        // Create a stream that yields ConverseStreamOutput
+        let stream = async_stream::stream! {
+            let mut event_stream = stream_output.stream;
+            loop {
+                match event_stream.recv().await {
+                    Ok(Some(output)) => {
+                        yield Ok(output);
+                    }
+                    Ok(None) => break,
+                    Err(e) => {
+                        yield Err(e);
+                        break;
+                    }
+                }
+            }
+        };
+
+        // Process the stream and reconstruct the full response
+        process_stream_with_response(stream).await
+    }
+
+    fn build_tool_config(&self, tools: Vec<ToolDefinition>) -> Result<ToolConfiguration> {
+        let mut tool_specs = Vec::new();
+        
+        for tool in tools {
+            let doc = Self::json_to_document(&tool.input_schema)?;
+            
+            let spec = ToolSpecification::builder()
+                .name(tool.name)
+                .description(tool.description)
+                .input_schema(ToolInputSchema::Json(doc))
+                .build()
+                .map_err(|e| BedrockError::Unknown(e.to_string()))?;
+            
+            tool_specs.push(Tool::ToolSpec(spec));
+        }
+        
+        ToolConfiguration::builder()
+            .set_tools(Some(tool_specs))
+            .build()
+            .map_err(|e| BedrockError::Unknown(e.to_string()))
+    }
+    
+    pub fn json_to_document(value: &Value) -> Result<Document> {
+        match value {
+            Value::Null => Ok(Document::Null),
+            Value::Bool(b) => Ok(Document::Bool(*b)),
+            Value::Number(n) => {
+                if let Some(i) = n.as_i64() {
+                    Ok(Document::Number(aws_smithy_types::Number::NegInt(i)))
+                } else if let Some(u) = n.as_u64() {
+                    Ok(Document::Number(aws_smithy_types::Number::PosInt(u)))
+                } else if let Some(f) = n.as_f64() {
+                    Ok(Document::Number(aws_smithy_types::Number::Float(f)))
+                } else {
+                    Err(BedrockError::Unknown("Invalid number".into()))
+                }
+            }
+            Value::String(s) => Ok(Document::String(s.clone())),
+            Value::Array(arr) => {
+                let docs: Result<Vec<Document>> = arr.iter()
+                    .map(Self::json_to_document)
+                    .collect();
+                Ok(Document::Array(docs?))
+            }
+            Value::Object(obj) => {
+                let mut map = std::collections::HashMap::new();
+                for (k, v) in obj {
+                    map.insert(k.clone(), Self::json_to_document(v)?);
+                }
+                Ok(Document::Object(map))
+            }
+        }
+    }
+
+    fn document_to_json(doc: &Document) -> Result<Value> {
+        match doc {
+            Document::Null => Ok(Value::Null),
+            Document::Bool(b) => Ok(Value::Bool(*b)),
+            Document::Number(n) => {
+                match n {
+                    aws_smithy_types::Number::PosInt(u) => Ok(Value::Number((*u).into())),
+                    aws_smithy_types::Number::NegInt(i) => Ok(Value::Number((*i).into())),
+                    aws_smithy_types::Number::Float(f) => {
+                        serde_json::Number::from_f64(*f)
+                            .map(Value::Number)
+                            .ok_or_else(|| BedrockError::Unknown("Invalid float value".into()))
+                    }
+                }
+            }
+            Document::String(s) => Ok(Value::String(s.clone())),
+            Document::Array(arr) => {
+                let values: Result<Vec<Value>> = arr.iter()
+                    .map(Self::document_to_json)
+                    .collect();
+                Ok(Value::Array(values?))
+            }
+            Document::Object(obj) => {
+                let mut map = serde_json::Map::new();
+                for (k, v) in obj {
+                    map.insert(k.clone(), Self::document_to_json(v)?);
+                }
+                Ok(Value::Object(map))
+            }
+        }
+    }
+
+
+    pub async fn execute_tools(
+        &self,
+        tool_uses: &[&ToolUseBlock],
+        tool_registry: &bedrock_tools::ToolRegistry,
+    ) -> Result<Vec<ToolResultBlock>> {
+        let mut results = Vec::new();
+
+        for tool_use in tool_uses {
+            debug!("Executing tool: {}", tool_use.name());
+            
+            let result = if let Some(tool) = tool_registry.get(tool_use.name()) {
+                let input_json = Self::document_to_json(tool_use.input())?;
+                match tool.execute(input_json).await {
+                    Ok(output) => {
+                        let result_doc = Self::json_to_document(&output)?;
+                        ToolResultBlock::builder()
+                            .tool_use_id(tool_use.tool_use_id())
+                            .content(ToolResultContentBlock::Json(result_doc))
+                            .build()
+                            .map_err(|e| BedrockError::Unknown(format!("Failed to build tool result: {e}")))?
+                    }
+                    Err(e) => {
+                        let error_result = json!({
+                            "error": e.to_string(),
+                            "tool": tool_use.name()
+                        });
+                        let error_doc = Self::json_to_document(&error_result)?;
+                        ToolResultBlock::builder()
+                            .tool_use_id(tool_use.tool_use_id())
+                            .content(ToolResultContentBlock::Json(error_doc))
+                            .status(bedrock::types::ToolResultStatus::Error)
+                            .build()
+                            .map_err(|e| BedrockError::Unknown(format!("Failed to build error tool result: {e}")))?
+                    }
+                }
+            } else {
+                let error_result = json!({
+                    "error": format!("Tool '{}' not found", tool_use.name()),
+                    "tool": tool_use.name()
+                });
+                let error_doc = Self::json_to_document(&error_result)?;
+                ToolResultBlock::builder()
+                    .tool_use_id(tool_use.tool_use_id())
+                    .content(ToolResultContentBlock::Json(error_doc))
+                    .status(bedrock::types::ToolResultStatus::Error)
+                    .build()
+                    .map_err(|e| BedrockError::Unknown(format!("Failed to build error tool result: {e}")))?
+            };
+            
+            results.push(result);
+        }
+
+        Ok(results)
     }
 
     pub fn get_region(&self) -> &str {
@@ -146,35 +351,5 @@ impl BedrockClient {
 
     pub fn get_config(&self) -> Arc<AgentConfig> {
         Arc::clone(&self.config)
-    }
-}
-
-impl From<TokenUsage> for TokenStatistics {
-    fn from(usage: TokenUsage) -> Self {
-        TokenStatistics {
-            input_tokens: usage.input_tokens,
-            output_tokens: usage.output_tokens,
-            total_tokens: usage.total_tokens,
-            cache_hits: 0,
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_token_usage_conversion() {
-        let usage = TokenUsage {
-            input_tokens: 100,
-            output_tokens: 50,
-            total_tokens: 150,
-        };
-
-        let stats: TokenStatistics = usage.into();
-        assert_eq!(stats.input_tokens, 100);
-        assert_eq!(stats.output_tokens, 50);
-        assert_eq!(stats.total_tokens, 150);
     }
 }

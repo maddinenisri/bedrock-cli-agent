@@ -10,12 +10,16 @@ description = "AWS Bedrock client with caching and rate limiting"
 [dependencies]
 bedrock-core = { path = "../bedrock-core" }
 bedrock-config = { path = "../bedrock-config" }
+bedrock-tools = { path = "../bedrock-tools" }
 aws-config = { workspace = true }
 aws-sdk-bedrockruntime = { workspace = true }
 aws-smithy-types = { workspace = true }
 aws-smithy-runtime-api = { workspace = true }
 tokio = { workspace = true }
+tokio-stream = { workspace = true }
+async-stream = { workspace = true }
 async-trait = { workspace = true }
+futures = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }

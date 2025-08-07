@@ -23,6 +23,12 @@ pub struct ModelTokenStats {
     pub requests: usize,
 }
 
+impl Default for TokenTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TokenTracker {
     pub fn new() -> Self {
         Self {
