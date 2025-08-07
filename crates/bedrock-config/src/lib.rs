@@ -16,6 +16,8 @@ pub struct AgentConfig {
     pub limits: LimitSettings,
     #[serde(default)]
     pub paths: PathSettings,
+    #[serde(default)]
+    pub mcp: McpSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -96,6 +98,29 @@ pub struct PathSettings {
     pub home_dir: PathBuf,
     #[serde(default = "default_workspace_dir")]
     pub workspace_dir: PathBuf,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub config_files: Vec<String>,
+    #[serde(default)]
+    pub servers: Vec<String>,
+    #[serde(default)]
+    pub inline_servers: HashMap<String, serde_json::Value>,
+}
+
+impl Default for McpSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            config_files: vec![],
+            servers: vec![],
+            inline_servers: HashMap::new(),
+        }
+    }
 }
 
 impl AgentConfig {
@@ -226,6 +251,7 @@ impl Default for AgentConfig {
             },
             limits: LimitSettings::default(),
             paths: PathSettings::default(),
+            mcp: McpSettings::default(),
         }
     }
 }

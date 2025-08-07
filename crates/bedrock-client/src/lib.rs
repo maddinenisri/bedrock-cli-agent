@@ -11,7 +11,7 @@ use bedrock_core::{BedrockError, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 pub mod ui;
 mod streaming;
@@ -206,18 +206,35 @@ impl BedrockClient {
     fn build_tool_config(&self, tools: Vec<ToolDefinition>) -> Result<ToolConfiguration> {
         let mut tool_specs = Vec::new();
         
+        info!("🔧 Building tool config for {} tools", tools.len());
+        
         for tool in tools {
-            let doc = Self::json_to_document(&tool.input_schema)?;
+            debug!("Adding tool to Bedrock: {}", tool.name);
+            
+            // Following reference project pattern: fallback to empty schema on conversion failure
+            let doc = match Self::json_to_document(&tool.input_schema) {
+                Ok(d) => {
+                    debug!("Schema converted successfully for tool: {}", tool.name);
+                    d
+                }
+                Err(e) => {
+                    warn!("Failed to convert schema for tool '{}': {} - using empty schema as fallback", tool.name, e);
+                    // Use empty schema as fallback (reference project pattern)
+                    Document::Object(std::collections::HashMap::new())
+                }
+            };
             
             let spec = ToolSpecification::builder()
-                .name(tool.name)
+                .name(tool.name.clone())
                 .description(tool.description)
                 .input_schema(ToolInputSchema::Json(doc))
                 .build()
-                .map_err(|e| BedrockError::Unknown(e.to_string()))?;
+                .map_err(|e| BedrockError::Unknown(format!("Failed to build tool spec for '{}': {}", tool.name, e)))?;
             
             tool_specs.push(Tool::ToolSpec(spec));
         }
+        
+        info!("✅ Successfully built {} tool specifications", tool_specs.len());
         
         ToolConfiguration::builder()
             .set_tools(Some(tool_specs))
@@ -226,6 +243,18 @@ impl BedrockClient {
     }
     
     pub fn json_to_document(value: &Value) -> Result<Document> {
+        Self::json_to_document_with_depth(value, 0)
+    }
+    
+    fn json_to_document_with_depth(value: &Value, depth: usize) -> Result<Document> {
+        const MAX_DEPTH: usize = 100; // Reasonable depth limit
+        
+        if depth > MAX_DEPTH {
+            // Return a placeholder for deeply nested structures
+            debug!("Max depth {} exceeded in json_to_document", MAX_DEPTH);
+            return Ok(Document::String(format!("[Deep nested object at depth {}]", depth)));
+        }
+        
         match value {
             Value::Null => Ok(Document::Null),
             Value::Bool(b) => Ok(Document::Bool(*b)),
@@ -243,14 +272,14 @@ impl BedrockClient {
             Value::String(s) => Ok(Document::String(s.clone())),
             Value::Array(arr) => {
                 let docs: Result<Vec<Document>> = arr.iter()
-                    .map(Self::json_to_document)
+                    .map(|v| Self::json_to_document_with_depth(v, depth + 1))
                     .collect();
                 Ok(Document::Array(docs?))
             }
             Value::Object(obj) => {
                 let mut map = std::collections::HashMap::new();
                 for (k, v) in obj {
-                    map.insert(k.clone(), Self::json_to_document(v)?);
+                    map.insert(k.clone(), Self::json_to_document_with_depth(v, depth + 1)?);
                 }
                 Ok(Document::Object(map))
             }
