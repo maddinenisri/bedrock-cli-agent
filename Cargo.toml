@@ -1,0 +1,61 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/bedrock-core",
+    "crates/bedrock-client",
+    "crates/bedrock-tools",
+    "crates/bedrock-mcp",
+    "crates/bedrock-task",
+    "crates/bedrock-config",
+    "crates/bedrock-metrics",
+    "crates/bedrock-agent",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Your Name <your.email@example.com>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/maddinenisri/bedrock-cli-agent"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.40", features = ["full"] }
+async-trait = "0.1"
+futures = "0.3"
+
+# AWS SDK
+aws-config = "1.5"
+aws-sdk-bedrockruntime = "1.58"
+aws-smithy-types = "1.2"
+aws-smithy-runtime-api = "1.7"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "2.0"
+
+# HTTP and streaming
+reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest-eventsource = "0.6"
+tokio-stream = "0.1"
+
+# Utilities
+uuid = { version = "1.11", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+lru = "0.12"
+
+# Testing
+mockall = "0.13"
+tempfile = "3.14"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
