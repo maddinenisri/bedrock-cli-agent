@@ -2,7 +2,10 @@ use async_trait::async_trait;
 use aws_sdk_bedrockruntime::types::{ContentBlock, ConversationRole, Message};
 use bedrock_client::{BedrockClient, ToolDefinition};
 use bedrock_config::AgentConfig;
-use bedrock_core::{Agent as AgentTrait, BedrockError, Result, Task, TaskResult, TaskStatus};
+use bedrock_core::{
+    Agent as AgentTrait, BedrockError, CostDetails, Result, StreamResult,
+    Task, TaskResult, TaskStatus, TokenStatistics,
+};
 use bedrock_task::TaskExecutor;
 use bedrock_tools::ToolRegistry;
 use std::sync::Arc;
@@ -140,11 +143,34 @@ impl Agent {
         }
     }
 
+    fn calculate_cost(&self, input_tokens: usize, output_tokens: usize) -> CostDetails {
+        let pricing = self.config.pricing.get(&self.config.agent.model);
+        
+        let (input_cost, output_cost, currency) = if let Some(pricing) = pricing {
+            let input_cost = (input_tokens as f64 / 1000.0) * pricing.input_per_1k;
+            let output_cost = (output_tokens as f64 / 1000.0) * pricing.output_per_1k;
+            (input_cost, output_cost, pricing.currency.clone())
+        } else {
+            // Default pricing if model not in config
+            let input_cost = (input_tokens as f64 / 1000.0) * 0.003;
+            let output_cost = (output_tokens as f64 / 1000.0) * 0.015;
+            (input_cost, output_cost, "USD".to_string())
+        };
+        
+        CostDetails {
+            input_cost,
+            output_cost,
+            total_cost: input_cost + output_cost,
+            currency,
+            model: self.config.agent.model.clone(),
+        }
+    }
+
     pub async fn chat_stream(
         &self,
         prompt: &str,
         mut callback: impl FnMut(&str) + Send,
-    ) -> Result<String> {
+    ) -> Result<StreamResult> {
         info!("Processing streaming chat prompt");
         
         // Build tool definitions if tools are available
@@ -173,6 +199,9 @@ impl Agent {
 
         let mut conversation = vec![user_message];
         let mut iterations = 0;
+        let mut total_input_tokens = 0usize;
+        let mut total_output_tokens = 0usize;
+        let final_response;
         const MAX_ITERATIONS: usize = 10;
 
         loop {
@@ -181,7 +210,8 @@ impl Agent {
                 warn!("Maximum iterations reached");
                 let msg = "I apologize, but I couldn't complete the task within the allowed iterations.";
                 callback(msg);
-                return Ok(msg.to_string());
+                final_response = msg.to_string();
+                break;
             }
 
             // Get streaming response - this now returns a ConverseResponse with the full message
@@ -193,6 +223,12 @@ impl Agent {
                     tool_definitions.clone(),
                 )
                 .await?;
+
+            // Track token usage
+            if let Some(usage) = &response.usage {
+                total_input_tokens += usage.input_tokens() as usize;
+                total_output_tokens += usage.output_tokens() as usize;
+            }
 
             // Add assistant response to conversation
             conversation.push(response.message.clone());
@@ -228,9 +264,26 @@ impl Agent {
                 }
             }
 
-            // No more tool calls, return the response
-            return Ok(response.get_text_content());
+            // No more tool calls, capture the response
+            final_response = response.get_text_content();
+            break;
         }
+
+        // Calculate cost and prepare result
+        let token_stats = TokenStatistics {
+            input_tokens: total_input_tokens,
+            output_tokens: total_output_tokens,
+            total_tokens: total_input_tokens + total_output_tokens,
+            cache_hits: 0,
+        };
+
+        let cost = self.calculate_cost(total_input_tokens, total_output_tokens);
+
+        Ok(StreamResult {
+            response: final_response,
+            token_stats,
+            cost,
+        })
     }
 }
 
