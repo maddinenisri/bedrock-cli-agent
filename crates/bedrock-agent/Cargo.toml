@@ -1,0 +1,35 @@
+[package]
+name = "bedrock-agent"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Main agent orchestration for Bedrock CLI Agent"
+
+[[bin]]
+name = "bedrock-agent"
+path = "src/main.rs"
+
+[dependencies]
+bedrock-core = { path = "../bedrock-core" }
+bedrock-config = { path = "../bedrock-config" }
+bedrock-client = { path = "../bedrock-client" }
+bedrock-tools = { path = "../bedrock-tools" }
+bedrock-mcp = { path = "../bedrock-mcp" }
+bedrock-task = { path = "../bedrock-task" }
+bedrock-metrics = { path = "../bedrock-metrics" }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

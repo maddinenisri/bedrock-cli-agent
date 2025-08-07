@@ -1,0 +1,21 @@
+[package]
+name = "bedrock-metrics"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Token tracking, metrics, and cost calculation for Bedrock CLI Agent"
+
+[dependencies]
+bedrock-core = { path = "../bedrock-core" }
+bedrock-config = { path = "../bedrock-config" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }

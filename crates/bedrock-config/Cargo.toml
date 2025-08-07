@@ -1,0 +1,19 @@
+[package]
+name = "bedrock-config"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "YAML-based configuration management for Bedrock CLI Agent"
+
+[dependencies]
+bedrock-core = { path = "../bedrock-core" }
+serde = { workspace = true }
+serde_yaml = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }

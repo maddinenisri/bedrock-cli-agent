@@ -1,0 +1,48 @@
+agent:
+  name: bedrock-agent
+  model: anthropic.claude-3-5-sonnet-20241022-v2:0
+  temperature: 0.7
+  max_tokens: 4096
+
+aws:
+  region: us-east-1
+  # Optional: specify AWS profile
+  # profile: default
+
+tools:
+  allowed:
+    - fs_read
+    - fs_write
+    - grep
+    - find
+  permissions:
+    fs_write:
+      permission: allow
+      constraint: workspace_only
+    fs_read:
+      permission: allow
+
+pricing:
+  anthropic.claude-3-5-sonnet-20241022-v2:0:
+    input_per_1k: 0.003
+    output_per_1k: 0.015
+    currency: USD
+  anthropic.claude-3-sonnet-20240229-v1:0:
+    input_per_1k: 0.003
+    output_per_1k: 0.015
+    currency: USD
+  anthropic.claude-3-haiku-20240307-v1:0:
+    input_per_1k: 0.00025
+    output_per_1k: 0.00125
+    currency: USD
+
+limits:
+  max_tpm: 100000
+  max_rpm: 100
+  budget_limit: 10.0
+  alert_threshold: 0.8
+
+paths:
+  # These will use environment variables if set
+  # home_dir: ${HOME_DIR}
+  # workspace_dir: ${WORKSPACE_DIR}
