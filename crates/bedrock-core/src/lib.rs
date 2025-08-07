@@ -41,6 +41,13 @@ pub struct TaskResult {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamResult {
+    pub response: String,
+    pub token_stats: TokenStatistics,
+    pub cost: CostDetails,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TaskStatus {
     Pending,

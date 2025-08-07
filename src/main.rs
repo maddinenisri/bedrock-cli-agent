@@ -105,12 +105,24 @@ async fn execute_task(
     if stream {
         println!("\n🤖 Streaming response:\n");
         
-        let mut full_response = String::new();
-        agent.chat_stream(&prompt, |chunk| {
+        let result = agent.chat_stream(&prompt, |chunk| {
             print!("{chunk}");
-            full_response.push_str(chunk);
+            std::io::stdout().flush().ok();
         }).await?;
+        
         println!("\n");
+        
+        // Display metrics after streaming
+        println!("\n📊 Token Statistics:");
+        println!("  Input tokens: {}", result.token_stats.input_tokens);
+        println!("  Output tokens: {}", result.token_stats.output_tokens);
+        println!("  Total tokens: {}", result.token_stats.total_tokens);
+        
+        println!("\n💰 Cost Details:");
+        println!("  Model: {}", result.cost.model);
+        println!("  Input cost: ${:.4}", result.cost.input_cost);
+        println!("  Output cost: ${:.4}", result.cost.output_cost);
+        println!("  Total cost: ${:.4} {}", result.cost.total_cost, result.cost.currency);
     } else {
         // For non-streaming, use the task execution for full tracking
         let task = if let Some(ctx) = context {
@@ -191,10 +203,15 @@ async fn interactive_chat(
         io::stdout().flush()?;
         
         if stream {
-            agent.chat_stream(input, |chunk| {
+            let result = agent.chat_stream(input, |chunk| {
                 print!("{chunk}");
+                std::io::stdout().flush().ok();
             }).await?;
             println!("\n");
+            // Optionally show metrics in chat mode too (in a more compact format)
+            println!("(Tokens: {} | Cost: ${:.4})", 
+                result.token_stats.total_tokens, 
+                result.cost.total_cost);
         } else {
             let response = agent.chat(input).await?;
             println!("{response}\n");
