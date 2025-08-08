@@ -51,34 +51,44 @@ tmp/
 
 workspace/
 
+# Claude Flow and AI tool-related directories
+.claude-flow/
+.claude/
+.roo/
+.roomodes
+.swarm/
+.hive-mind/
 
 # Claude Flow generated files
 .claude/settings.local.json
 .mcp.json
 claude-flow.config.json
-.swarm/
-.hive-mind/
+claude-flow
+claude-flow.bat
+claude-flow.ps1
+hive-mind-prompt-*.txt
+
+# Memory and session data
+memory/
 memory/claude-flow-data.json
 memory/sessions/*
 !memory/sessions/README.md
 memory/agents/*
 !memory/agents/README.md
+
+# Coordination directories
 coordination/memory_bank/*
 coordination/subtasks/*
 coordination/orchestration/*
+
+# Database files
 *.db
 *.db-journal
 *.db-wal
 *.sqlite
 *.sqlite-journal
 *.sqlite-wal
-claude-flow
-claude-flow.bat
-claude-flow.ps1
-hive-mind-prompt-*.txt
-.claude-flow/
-.claude/
-.roo/
-.roomodes
+
+# Backup files
 config.yaml.backup
-memory/
+*.backup
