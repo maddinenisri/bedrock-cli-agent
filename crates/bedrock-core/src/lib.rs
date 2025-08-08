@@ -33,11 +33,13 @@ pub struct TaskResult {
     pub status: TaskStatus,
     pub summary: String,
     // Store conversation as JSON since AWS Message types don't impl Serialize
-    pub conversation: Vec<serde_json::Value>,
+    pub conversation: Option<Vec<serde_json::Value>>,
+    pub result: Option<serde_json::Value>,
     pub token_stats: TokenStatistics,
     pub cost: CostDetails,
     pub started_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
+    pub duration_ms: Option<u64>,
     pub error: Option<String>,
 }
 
@@ -109,6 +111,9 @@ pub enum BedrockError {
     
     #[error("MCP communication error: {0}")]
     McpError(String),
+    
+    #[error("Resource not found: {0}")]
+    NotFound(String),
     
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),

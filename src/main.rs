@@ -146,11 +146,13 @@ async fn execute_task(
         }
         
         println!("\n💬 Conversation:");
-        for msg in &result.conversation {
-            if let Some(role) = msg.get("role") {
-                if let Some(content) = msg.get("content") {
-                    println!("[{role}]: {content}");
-                    println!();
+        if let Some(conversation) = &result.conversation {
+            for msg in conversation {
+                if let Some(role) = msg.get("role") {
+                    if let Some(content) = msg.get("content") {
+                        println!("[{role}]: {content}");
+                        println!();
+                    }
                 }
             }
         }

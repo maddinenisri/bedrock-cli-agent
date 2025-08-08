@@ -12,6 +12,7 @@ bedrock-core = { path = "../bedrock-core" }
 bedrock-client = { path = "../bedrock-client" }
 bedrock-tools = { path = "../bedrock-tools" }
 bedrock-config = { path = "../bedrock-config" }
+bedrock-conversation = { path = "../bedrock-conversation" }
 aws-sdk-bedrockruntime = { workspace = true }
 tokio = { workspace = true }
 async-trait = { workspace = true }

@@ -191,8 +191,12 @@ impl AgentConfig {
 
     pub fn default_config_path() -> PathBuf {
         let home_dir = std::env::var("HOME_DIR")
-            .unwrap_or_else(|_| std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
-        PathBuf::from(home_dir).join(".bedrock-agent").join("agent.yaml")
+            .unwrap_or_else(|_| {
+                dirs::home_dir()
+                    .map(|p| p.join(".bedrock-agent").to_string_lossy().to_string())
+                    .unwrap_or_else(|| "./.bedrock-agent".to_string())
+            });
+        PathBuf::from(home_dir).join("agent.yaml")
     }
 }
 
@@ -221,7 +225,7 @@ impl Default for AgentConfig {
         Self {
             agent: AgentSettings {
                 name: "bedrock-agent".to_string(),
-                model: "anthropic.claude-3-5-sonnet-20241022-v2:0".to_string(),
+                model: "us.anthropic.claude-3-5-sonnet-20241022-v2:0".to_string(),
                 temperature: default_temperature(),
                 max_tokens: default_max_tokens(),
             },
@@ -243,7 +247,7 @@ impl Default for AgentConfig {
             pricing: {
                 let mut pricing = HashMap::new();
                 pricing.insert(
-                    "anthropic.claude-3-5-sonnet-20241022-v2:0".to_string(),
+                    "us.anthropic.claude-3-5-sonnet-20241022-v2:0".to_string(),
                     ModelPricing {
                         input_per_1k: 0.003,
                         output_per_1k: 0.015,
@@ -269,7 +273,11 @@ fn default_max_tools() -> usize { 64 }  // AWS Bedrock limit for most models
 
 fn default_home_dir() -> PathBuf {
     std::env::var("HOME_DIR")
-        .unwrap_or_else(|_| std::env::var("HOME").unwrap_or_else(|_| ".".to_string()))
+        .unwrap_or_else(|_| {
+            dirs::home_dir()
+                .map(|p| p.join(".bedrock-agent").to_string_lossy().to_string())
+                .unwrap_or_else(|| "./.bedrock-agent".to_string())
+        })
         .into()
 }
 

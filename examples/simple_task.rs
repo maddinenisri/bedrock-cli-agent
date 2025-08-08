@@ -31,7 +31,7 @@ async fn main() -> Result<()> {
         bedrock_client,
         Arc::new(tool_registry),
         Arc::new(config),
-    );
+    )?;
 
     // Create a task
     let mut task = Task::new("List the files in the current directory and summarize what this project is about");

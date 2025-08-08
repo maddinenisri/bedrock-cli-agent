@@ -77,7 +77,7 @@ impl Agent {
             Arc::clone(&bedrock_client),
             Arc::clone(&tool_registry),
             Arc::new(config.clone()),
-        ));
+        )?);
         
         Ok(Self {
             config: Arc::new(config),
