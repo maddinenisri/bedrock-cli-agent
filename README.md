@@ -15,7 +15,7 @@ A Rust-based AWS Bedrock LLM agent with built-in tools, caching, and MCP integra
 - ✅ YAML-based configuration with environment variable substitution
 - ✅ Modular crate architecture
 - ✅ Metrics collection and monitoring
-- ⚠️ MCP tool integration (implemented but has critical issues - see docs/implementation/mcp/)
+- ✅ MCP tool integration (stdio/SSE) - Tested with FIGMA and JIRA tools
 - 📋 Response caching (LRU) - planned
 - 📋 Rate limiting - planned
 
@@ -117,7 +117,7 @@ The project is organized into modular crates:
 - `bedrock-task`: Task execution and queue management
 - `bedrock-agent`: Main agent orchestration with tool execution loop
 - `bedrock-metrics`: Token tracking, cost calculation, and metrics collection
-- `bedrock-mcp`: MCP integration (partially implemented - see known issues)
+- `bedrock-mcp`: MCP integration for external tools (stdio/SSE transports)
 
 ## Development
 

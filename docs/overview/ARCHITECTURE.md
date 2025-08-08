@@ -183,24 +183,25 @@ MetricsCollector
 └── Export Manager
 ```
 
-### 8. MCP Integration (`crates/bedrock-mcp`) ⚠️
+### 8. MCP Integration (`crates/bedrock-mcp`) ✅
 
-**Status**: Partially implemented with critical issues
+**Status**: Fully functional and tested
 
-**Intended Architecture**:
+**Architecture**:
 ```
 MCPManager
-├── Server Manager
-├── Transport Layer (Stdio/SSE)
-├── Protocol Handler
-├── Tool Adapter
-└── Health Monitor
+├── Server Manager (lifecycle management)
+├── Transport Layer (Stdio/SSE - both working)
+├── Protocol Handler (JSON-RPC 2.0)
+├── Tool Adapter (seamless integration)
+└── Health Monitor (automatic recovery)
 ```
 
-**Current Issues**:
-- Tool interface incompatibility
-- Missing type conversions
-- Response handling complexity
+**Verified Integrations**:
+- **Stdio**: FIGMA tools working
+- **SSE**: JIRA via Redux HTTP API working
+- Tool discovery and execution confirmed
+- Automatic tool registration with main registry
 
 ## Data Flow Architecture
 
