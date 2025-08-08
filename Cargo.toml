@@ -76,6 +76,7 @@ bedrock-client = { path = "crates/bedrock-client" }
 bedrock-tools = { path = "crates/bedrock-tools" }
 bedrock-task = { path = "crates/bedrock-task" }
 bedrock-config = { path = "crates/bedrock-config" }
+bedrock-conversation = { path = "crates/bedrock-conversation" }
 bedrock-agent = { path = "crates/bedrock-agent" }
 bedrock-mcp = { path = "crates/bedrock-mcp" }
 
@@ -96,6 +97,10 @@ anyhow = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
+
+# Utilities
+uuid = { workspace = true }
+chrono = { workspace = true }
 
 [profile.release]
 opt-level = 3
