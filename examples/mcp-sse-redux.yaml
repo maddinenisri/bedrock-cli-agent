@@ -1,0 +1,20 @@
+# MCP SSE Configuration for Redux API Server
+# This server provides access to Redux functionality via MCP
+
+mcpServers:
+  reduxApi:
+    type: sse
+    url: "http://localhost:8080"
+    headers:
+      token: "gAAAAABok5IS5q-OKYBO8UZYT7DBcX5PTcrEJalYAGWRpg3J-5WfOmjw2_haU2nD59d-pz7IgFjQo7p4-ILMCO4zginlC-4GRXDC3PRpa_mz67tggCJsrQqeYnXd0oK0zRuPdY_38TVKs4ZGYfoApHYnSlwjiuPbznOxpKrOhl274KsOJDfToHDEUZTMyZKb-et6r7YcCRrM"
+    timeout: 30000
+    disabled: false
+    health_check:
+      interval: 30
+      timeout: 10
+      max_failures: 3
+    restart_policy:
+      max_retries: 3
+      initial_delay: 5
+      max_delay: 60
+      backoff: exponential

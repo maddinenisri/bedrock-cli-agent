@@ -76,6 +76,7 @@ bedrock-tools = { path = "crates/bedrock-tools" }
 bedrock-task = { path = "crates/bedrock-task" }
 bedrock-config = { path = "crates/bedrock-config" }
 bedrock-agent = { path = "crates/bedrock-agent" }
+bedrock-mcp = { path = "crates/bedrock-mcp" }
 
 # For examples
 aws-sdk-bedrockruntime = { workspace = true }
@@ -99,3 +100,27 @@ tracing = { workspace = true }
 opt-level = 3
 lto = true
 codegen-units = 1
+
+[[example]]
+name = "test_mcp_integration"
+path = "examples/test_mcp_integration.rs"
+
+[[example]]
+name = "test_mcp_sse_redux"
+path = "examples/test_mcp_sse_redux.rs"
+
+[[example]]
+name = "test_mcp_sse_figma"
+path = "examples/test_mcp_sse_figma.rs"
+
+[[example]]
+name = "test_mcp_stdio_figma"
+path = "examples/test_mcp_stdio_figma.rs"
+
+[[example]]
+name = "test_mcp_bedrock_integration"
+path = "examples/test_mcp_bedrock_integration.rs"
+
+[[example]]
+name = "test_mcp_tool_execution"
+path = "examples/test_mcp_tool_execution.rs"

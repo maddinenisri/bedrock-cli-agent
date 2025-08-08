@@ -1,0 +1,42 @@
+agent:
+  name: redux-sse-test
+  model: us.anthropic.claude-3-5-sonnet-20241022-v2:0
+  temperature: 0.7
+  max_tokens: 4096
+
+aws:
+  region: ${AWS_REGION:-us-east-1}
+  profile: ${AWS_PROFILE:-default}
+
+tools:
+  allowed:
+    - fs_read
+    - fs_write
+    - fs_list
+  permissions: {}
+
+mcp:
+  enabled: true
+  servers:
+    - reduxApi
+  inline_servers:
+    reduxApi:
+      type: sse
+      url: http://localhost:8080
+      headers:
+        token: gAAAAABok5IS5q-OKYBO8UZYT7DBcX5PTcrEJalYAGWRpg3J-5WfOmjw2_haU2nD59d-pz7IgFjQo7p4-ILMCO4zginlC-4GRXDC3PRpa_mz67tggCJsrQqeYnXd0oK0zRuPdY_38TVKs4ZGYfoApHYnSlwjiuPbznOxpKrOhl274KsOJDfToHDEUZTMyZKb-et6r7YcCRrM
+      timeout: 30000
+
+pricing:
+  us.anthropic.claude-3-5-sonnet-20241022-v2:0:
+    input_per_1k: 0.003
+    output_per_1k: 0.015
+    currency: USD
+
+limits:
+  max_tpm: 100000
+  max_rpm: 100
+
+paths:
+  home_dir: ~/.bedrock-agent
+  workspace_dir: ./workspace

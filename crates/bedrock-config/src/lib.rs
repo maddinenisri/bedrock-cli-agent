@@ -16,6 +16,8 @@ pub struct AgentConfig {
     pub limits: LimitSettings,
     #[serde(default)]
     pub paths: PathSettings,
+    #[serde(default)]
+    pub mcp: McpSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -96,6 +98,32 @@ pub struct PathSettings {
     pub home_dir: PathBuf,
     #[serde(default = "default_workspace_dir")]
     pub workspace_dir: PathBuf,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub config_files: Vec<String>,
+    #[serde(default)]
+    pub servers: Vec<String>,
+    #[serde(default)]
+    pub inline_servers: HashMap<String, serde_json::Value>,
+    #[serde(default = "default_max_tools")]
+    pub max_tools: usize,
+}
+
+impl Default for McpSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            config_files: vec![],
+            servers: vec![],
+            inline_servers: HashMap::new(),
+            max_tools: default_max_tools(),
+        }
+    }
 }
 
 impl AgentConfig {
@@ -226,6 +254,7 @@ impl Default for AgentConfig {
             },
             limits: LimitSettings::default(),
             paths: PathSettings::default(),
+            mcp: McpSettings::default(),
         }
     }
 }
@@ -236,6 +265,7 @@ fn default_currency() -> String { "USD".to_string() }
 fn default_max_tpm() -> usize { 100_000 }
 fn default_max_rpm() -> usize { 100 }
 fn default_alert_threshold() -> f64 { 0.8 }
+fn default_max_tools() -> usize { 64 }  // AWS Bedrock limit for most models
 
 fn default_home_dir() -> PathBuf {
     std::env::var("HOME_DIR")

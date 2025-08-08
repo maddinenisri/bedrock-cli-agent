@@ -6,6 +6,7 @@ use bedrock_core::{
     Agent as AgentTrait, BedrockError, CostDetails, Result, StreamResult,
     Task, TaskResult, TaskStatus, TokenStatistics,
 };
+use bedrock_mcp::McpManager;
 use bedrock_task::TaskExecutor;
 use bedrock_tools::ToolRegistry;
 use std::sync::Arc;
@@ -17,6 +18,7 @@ pub struct Agent {
     bedrock_client: Arc<BedrockClient>,
     tool_registry: Arc<ToolRegistry>,
     task_executor: Arc<TaskExecutor>,
+    mcp_manager: Option<Arc<tokio::sync::RwLock<McpManager>>>,
 }
 
 impl Agent {
@@ -27,6 +29,49 @@ impl Agent {
         let tool_registry = Arc::new(
             ToolRegistry::with_default_tools(&config.paths.workspace_dir)
         );
+        
+        // Initialize MCP manager if enabled
+        let mcp_manager = if config.mcp.enabled {
+            info!("Initializing MCP integration");
+            let mut manager = McpManager::new(tool_registry.clone());
+            
+            // Load MCP configurations
+            for config_file in &config.mcp.config_files {
+                if let Err(e) = manager.load_config_file(config_file).await {
+                    warn!("Failed to load MCP config from {}: {}", config_file, e);
+                }
+            }
+            
+            // Add inline MCP servers from agent config
+            if !config.mcp.inline_servers.is_empty() {
+                let mut mcp_servers = std::collections::HashMap::new();
+                for (name, value) in &config.mcp.inline_servers {
+                    match serde_json::from_value::<bedrock_mcp::McpServerConfig>(value.clone()) {
+                        Ok(server_config) => {
+                            mcp_servers.insert(name.clone(), server_config);
+                        }
+                        Err(e) => {
+                            warn!("Failed to parse inline MCP server '{}': {}", name, e);
+                        }
+                    }
+                }
+                if !mcp_servers.is_empty() {
+                    if let Err(e) = manager.add_servers_from_config(mcp_servers).await {
+                        warn!("Failed to add inline MCP servers: {}", e);
+                    }
+                }
+            }
+            
+            // Start specified MCP servers
+            if let Err(e) = manager.start_servers(config.mcp.servers.clone()).await {
+                warn!("Failed to start MCP servers: {}", e);
+                // Continue even if MCP servers fail to start
+            }
+            
+            Some(Arc::new(tokio::sync::RwLock::new(manager)))
+        } else {
+            None
+        };
         
         let task_executor = Arc::new(TaskExecutor::new(
             Arc::clone(&bedrock_client),
@@ -39,6 +84,7 @@ impl Agent {
             bedrock_client,
             tool_registry,
             task_executor,
+            mcp_manager,
         })
     }
 
@@ -284,6 +330,31 @@ impl Agent {
             token_stats,
             cost,
         })
+    }
+    
+    /// Shutdown the agent and cleanup resources
+    pub async fn shutdown(&mut self) -> Result<()> {
+        info!("Shutting down agent");
+        
+        // Stop all MCP servers if initialized
+        if let Some(mcp_manager) = &self.mcp_manager {
+            let mut manager = mcp_manager.write().await;
+            if let Err(e) = manager.stop_all().await {
+                warn!("Error stopping MCP servers: {}", e);
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Get list of connected MCP servers
+    pub async fn list_mcp_servers(&self) -> Vec<String> {
+        if let Some(mcp_manager) = &self.mcp_manager {
+            let manager = mcp_manager.read().await;
+            manager.list_servers().await
+        } else {
+            vec![]
+        }
     }
 }
 

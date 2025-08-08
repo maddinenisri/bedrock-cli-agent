@@ -7,11 +7,13 @@ use tokio::process::Command;
 use tracing::{debug, warn};
 
 use super::Tool;
+use crate::security::CommandValidator;
 
 pub struct ExecuteBashTool {
     workspace_dir: std::path::PathBuf,
     timeout_seconds: u64,
     max_output_size: usize,
+    validator: CommandValidator,
 }
 
 impl ExecuteBashTool {
@@ -20,7 +22,13 @@ impl ExecuteBashTool {
             workspace_dir: workspace_dir.into(),
             timeout_seconds: 30,
             max_output_size: 1024 * 1024, // 1MB
+            validator: CommandValidator::new(),
         }
+    }
+    
+    pub fn with_validator(mut self, validator: CommandValidator) -> Self {
+        self.validator = validator;
+        self
     }
 
     pub fn with_timeout(mut self, seconds: u64) -> Self {
@@ -29,6 +37,15 @@ impl ExecuteBashTool {
     }
 
     async fn execute_command(&self, command: &str, working_dir: Option<&str>) -> Result<Value> {
+        // Validate command before execution
+        if let Err(e) = self.validator.validate(command) {
+            return Ok(json!({
+                "success": false,
+                "error": format!("Command validation failed: {}", e),
+                "command": command
+            }));
+        }
+        
         debug!("Executing command: {}", command);
         
         // Parse the command line into command and arguments
