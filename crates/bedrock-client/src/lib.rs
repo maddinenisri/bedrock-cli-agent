@@ -268,10 +268,10 @@ impl BedrockClient {
             Value::Null => Ok(Document::Null),
             Value::Bool(b) => Ok(Document::Bool(*b)),
             Value::Number(n) => {
-                if let Some(i) = n.as_i64() {
-                    Ok(Document::Number(aws_smithy_types::Number::NegInt(i)))
-                } else if let Some(u) = n.as_u64() {
+                if let Some(u) = n.as_u64() {
                     Ok(Document::Number(aws_smithy_types::Number::PosInt(u)))
+                } else if let Some(i) = n.as_i64() {
+                    Ok(Document::Number(aws_smithy_types::Number::NegInt(i)))
                 } else if let Some(f) = n.as_f64() {
                     Ok(Document::Number(aws_smithy_types::Number::Float(f)))
                 } else {
@@ -389,5 +389,30 @@ impl BedrockClient {
 
     pub fn get_config(&self) -> Arc<AgentConfig> {
         Arc::clone(&self.config)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn json_to_document_handles_positive_integers() {
+        let value = json!(42);
+        let doc = BedrockClient::json_to_document(&value).expect("conversion should succeed");
+        match doc {
+            Document::Number(aws_smithy_types::Number::PosInt(n)) => assert_eq!(n, 42),
+            other => panic!("expected positive integer, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn json_to_document_handles_negative_integers() {
+        let value = json!(-7);
+        let doc = BedrockClient::json_to_document(&value).expect("conversion should succeed");
+        match doc {
+            Document::Number(aws_smithy_types::Number::NegInt(n)) => assert_eq!(n, -7),
+            other => panic!("expected negative integer, got {:?}", other),
+        }
     }
 }
