@@ -1,0 +1,72 @@
+# Test configuration for SSE-based MCP servers
+# This example shows how to configure HTTP Server-Sent Events MCP servers
+
+agent:
+  name: mcp-sse-test-agent
+  model: anthropic.claude-3-5-sonnet-20241022-v2:0
+  temperature: 0.7
+  max_tokens: 4096
+
+aws:
+  region: ${AWS_REGION:-us-east-1}
+  profile: ${AWS_PROFILE:-default}
+
+tools:
+  allowed:
+    - fs_read
+    - fs_write
+    - fs_list
+    - grep
+    - find
+  permissions: {}
+
+# MCP configuration
+mcp:
+  enabled: true
+  # Which servers to start for this agent
+  servers:
+    - github-api
+    - redux-api
+  
+  # Inline MCP server definitions
+  inline_servers:
+    github-api:
+      type: sse
+      url: http://localhost:3000
+      headers:
+        Authorization: "Bearer ${GITHUB_TOKEN}"
+        X-API-Version: "1.0"
+      timeout: 60000
+      disabled: false
+      health_check:
+        interval: 30
+        timeout: 10
+        max_failures: 5
+    
+    redux-api:
+      type: sse
+      url: http://localhost:8080
+      headers:
+        # Support for file-based secrets
+        token: "${file:~/.secrets/redux-token}"
+      timeout: 30000
+      disabled: false
+      restart_policy:
+        max_retries: 5
+        initial_delay: 2
+        max_delay: 60
+        backoff: exponential
+
+pricing:
+  anthropic.claude-3-5-sonnet-20241022-v2:0:
+    input_per_1k: 0.003
+    output_per_1k: 0.015
+    currency: USD
+
+limits:
+  max_tpm: 100000
+  max_rpm: 100
+
+paths:
+  home_dir: ${HOME_DIR:-~/.bedrock-agent}
+  workspace_dir: ${WORKSPACE_DIR:-./workspace}

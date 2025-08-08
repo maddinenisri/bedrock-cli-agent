@@ -1,0 +1,65 @@
+# Test configuration for stdio-based MCP servers
+# This example shows how to configure process-based MCP servers
+
+agent:
+  name: mcp-test-agent
+  model: anthropic.claude-3-5-sonnet-20241022-v2:0
+  temperature: 0.7
+  max_tokens: 4096
+
+aws:
+  region: ${AWS_REGION:-us-east-1}
+  profile: ${AWS_PROFILE:-default}
+
+tools:
+  allowed:
+    - fs_read
+    - fs_write
+    - fs_list
+    - grep
+    - find
+    - execute_bash
+  permissions:
+    execute_bash:
+      permission: ask
+      constraint: "Requires user confirmation for bash commands"
+
+# MCP configuration
+mcp:
+  enabled: true
+  # Load MCP server configs from these files
+  config_files:
+    - ${HOME_DIR:-~/.bedrock-agent}/mcp/*.yaml
+  
+  # Which servers to start for this agent
+  servers:
+    - figma-tools
+  
+  # Inline MCP server definitions (can also be in separate files)
+  inline_servers:
+    figma-tools:
+      command: npx
+      args:
+        - "-y"
+        - "figma-developer-mcp"
+        - "--stdio"
+      env:
+        FIGMA_API_KEY: "${FIGMA_API_KEY:-figd_D-jwHZ-cIE3iagHcW5YQNtkL1PunMdEebKFDNXGn}"
+      timeout: 30000
+      disabled: false
+
+pricing:
+  anthropic.claude-3-5-sonnet-20241022-v2:0:
+    input_per_1k: 0.003
+    output_per_1k: 0.015
+    currency: USD
+
+limits:
+  max_tpm: 100000
+  max_rpm: 100
+  budget_limit: 10.0
+  alert_threshold: 0.8
+
+paths:
+  home_dir: ${HOME_DIR:-~/.bedrock-agent}
+  workspace_dir: ${WORKSPACE_DIR:-./workspace}

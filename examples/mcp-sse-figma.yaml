@@ -1,0 +1,23 @@
+# MCP SSE Configuration for Figma API Server
+# This server provides access to Figma design tools via MCP
+
+mcpServers:
+  figma-api:
+    type: sse
+    url: "http://localhost:3000"
+    headers:
+      Accept: "text/event-stream"
+      Cache-Control: "no-cache"
+      # Figma API token should be set as environment variable
+      Authorization: "Bearer ${FIGMA_ACCESS_TOKEN}"
+    timeout: 30000
+    disabled: false
+    health_check:
+      interval: 30
+      timeout: 10
+      max_failures: 3
+    restart_policy:
+      max_retries: 3
+      initial_delay: 5
+      max_delay: 60
+      backoff: exponential
