@@ -76,3 +76,9 @@ claude-flow
 claude-flow.bat
 claude-flow.ps1
 hive-mind-prompt-*.txt
+.claude-flow/
+.claude/
+.roo/
+.roomodes
+config.yaml.backup
+memory/
