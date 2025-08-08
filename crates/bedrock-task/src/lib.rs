@@ -3,6 +3,7 @@ use aws_sdk_bedrockruntime::types::{
 };
 use bedrock_client::{BedrockClient, ToolDefinition};
 use bedrock_config::AgentConfig;
+use bedrock_conversation::{ConversationManager, TokenUsageStats};
 use bedrock_core::{
     BedrockError, CostDetails, Result, Task, TaskResult, TaskStatus,
     TokenStatistics,
@@ -62,6 +63,7 @@ pub struct TaskExecutor {
     active_tasks: Arc<Mutex<Vec<Uuid>>>,
     max_concurrent_tasks: usize,
     max_tool_iterations: usize,
+    conversation_manager: Arc<Mutex<ConversationManager>>,
 }
 
 impl TaskExecutor {
@@ -69,8 +71,9 @@ impl TaskExecutor {
         bedrock_client: Arc<BedrockClient>,
         tool_registry: Arc<ToolRegistry>,
         config: Arc<AgentConfig>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        let conversation_manager = ConversationManager::new()?;
+        Ok(Self {
             bedrock_client,
             tool_registry,
             config,
@@ -78,7 +81,8 @@ impl TaskExecutor {
             active_tasks: Arc::new(Mutex::new(Vec::new())),
             max_concurrent_tasks: 3,
             max_tool_iterations: 10,
-        }
+            conversation_manager: Arc::new(Mutex::new(conversation_manager)),
+        })
     }
 
     pub async fn queue_task(&self, task: Task, priority: Priority) -> Result<()> {
@@ -145,11 +149,13 @@ impl TaskExecutor {
                     task_id: task.task_id,
                     status: TaskStatus::Failed,
                     summary: "Task timed out".to_string(),
-                    conversation: vec![],
+                    conversation: Some(vec![]),
+                    result: None,
                     token_stats: TokenStatistics::default(),
                     cost: CostDetails::default(),
                     started_at: Utc::now(),
                     completed_at: Some(Utc::now()),
+                    duration_ms: Some(300_000),
                     error: Some("Task timed out after 300 seconds".to_string()),
                 })
             }
@@ -212,12 +218,23 @@ impl TaskExecutor {
             self.tool_registry.list().len()
         );
 
+        // Initialize conversation manager for this task
+        let mut conv_manager = self.conversation_manager.lock().await;
+        let conversation_id = conv_manager.start_conversation(
+            self.config.agent.model.clone(),
+            if task.context.is_empty() { None } else { Some(task.context.clone()) },
+        )?;
+        debug!("Started conversation {} for task {}", conversation_id, task.task_id);
+
         // Initialize conversation with user prompt
         let user_message = Message::builder()
             .role(ConversationRole::User)
             .content(ContentBlock::Text(task.prompt.clone()))
             .build()
             .map_err(|e| BedrockError::Unknown(e.to_string()))?;
+
+        // Save user message to conversation
+        conv_manager.save_bedrock_message(&user_message, None)?;
 
         let mut conversation = vec![user_message];
         let mut total_tokens = TokenStatistics::default();
@@ -250,11 +267,23 @@ impl TaskExecutor {
                 .await?;
 
             // Update token statistics
+            let mut token_usage_stats = None;
             if let Some(usage) = &response.usage {
                 total_tokens.input_tokens += usage.input_tokens() as usize;
                 total_tokens.output_tokens += usage.output_tokens() as usize;
                 total_tokens.total_tokens += usage.total_tokens() as usize;
+                
+                // Create token usage stats for this response
+                token_usage_stats = Some(TokenUsageStats {
+                    input_tokens: usage.input_tokens() as u32,
+                    output_tokens: usage.output_tokens() as u32,
+                    total_tokens: usage.total_tokens() as u32,
+                    total_cost: None, // Will be calculated at the end
+                });
             }
+
+            // Save assistant response to conversation
+            conv_manager.save_bedrock_message(&response.message, token_usage_stats)?;
 
             // Add assistant response to conversation
             conversation.push(response.message.clone());
@@ -287,6 +316,9 @@ impl TaskExecutor {
                         .build()
                         .map_err(|e| BedrockError::Unknown(e.to_string()))?;
                     
+                    // Save tool result message to conversation
+                    conv_manager.save_bedrock_message(&tool_result_message, None)?;
+                    
                     conversation.push(tool_result_message);
                     
                     // Continue conversation with tool results
@@ -306,15 +338,18 @@ impl TaskExecutor {
             // Convert conversation to JSON for storage
             let conversation_json = self.messages_to_json(&conversation)?;
 
+            let duration_ms = (Utc::now() - started_at).num_milliseconds() as u64;
             return Ok(TaskResult {
                 task_id: task.task_id,
                 status: TaskStatus::Completed,
-                summary,
-                conversation: conversation_json,
+                summary: summary.clone(),
+                conversation: Some(conversation_json),
+                result: Some(serde_json::json!({"summary": summary})),
                 token_stats: total_tokens,
                 cost,
                 started_at,
                 completed_at: Some(Utc::now()),
+                duration_ms: Some(duration_ms),
                 error: None,
             });
         }
@@ -323,15 +358,18 @@ impl TaskExecutor {
         let cost = self.calculate_cost(&total_tokens);
         let conversation_json = self.messages_to_json(&conversation)?;
         
+        let duration_ms = (Utc::now() - started_at).num_milliseconds() as u64;
         Ok(TaskResult {
             task_id: task.task_id,
             status: TaskStatus::Failed,
             summary: "Task failed: max tool iterations reached".to_string(),
-            conversation: conversation_json,
+            conversation: Some(conversation_json),
+            result: None,
             token_stats: total_tokens,
             cost,
             started_at,
             completed_at: Some(Utc::now()),
+            duration_ms: Some(duration_ms),
             error: Some("Max tool iterations reached".to_string()),
         })
     }
@@ -343,12 +381,23 @@ impl TaskExecutor {
     ) -> Result<TaskResult> {
         info!("Executing task without tools");
 
+        // Initialize conversation manager for this task
+        let mut conv_manager = self.conversation_manager.lock().await;
+        let conversation_id = conv_manager.start_conversation(
+            self.config.agent.model.clone(),
+            if task.context.is_empty() { None } else { Some(task.context.clone()) },
+        )?;
+        debug!("Started conversation {} for task {}", conversation_id, task.task_id);
+
         // Initialize conversation with user prompt
         let user_message = Message::builder()
             .role(ConversationRole::User)
             .content(ContentBlock::Text(task.prompt.clone()))
             .build()
             .map_err(|e| BedrockError::Unknown(e.to_string()))?;
+
+        // Save user message to conversation
+        conv_manager.save_bedrock_message(&user_message, None)?;
 
         let conversation = vec![user_message];
 
@@ -368,13 +417,31 @@ impl TaskExecutor {
 
         // Calculate token statistics
         let mut total_tokens = TokenStatistics::default();
+        let mut token_usage_stats = None;
         if let Some(usage) = &response.usage {
             total_tokens.input_tokens = usage.input_tokens() as usize;
             total_tokens.output_tokens = usage.output_tokens() as usize;
             total_tokens.total_tokens = usage.total_tokens() as usize;
+            
+            // Create token usage stats for conversation
+            token_usage_stats = Some(TokenUsageStats {
+                input_tokens: usage.input_tokens() as u32,
+                output_tokens: usage.output_tokens() as u32,
+                total_tokens: usage.total_tokens() as u32,
+                total_cost: None, // Will be calculated below
+            });
         }
 
         let cost = self.calculate_cost(&total_tokens);
+        
+        // Update token usage with cost if available
+        if let Some(ref mut stats) = token_usage_stats {
+            stats.total_cost = Some(cost.total_cost);
+        }
+        
+        // Save assistant response to conversation
+        conv_manager.save_bedrock_message(&response.message, token_usage_stats)?;
+        
         let text_content = response.get_text_content();
         let summary = if text_content.is_empty() {
             "Task completed".to_string()
@@ -388,15 +455,18 @@ impl TaskExecutor {
         
         let conversation_json = self.messages_to_json(&final_conversation)?;
 
+        let duration_ms = (Utc::now() - started_at).num_milliseconds() as u64;
         Ok(TaskResult {
             task_id: task.task_id,
             status: TaskStatus::Completed,
-            summary,
-            conversation: conversation_json,
+            summary: summary.clone(),
+            conversation: Some(conversation_json),
+            result: Some(serde_json::json!({"summary": summary})),
             token_stats: total_tokens,
             cost,
             started_at,
             completed_at: Some(Utc::now()),
+            duration_ms: Some(duration_ms),
             error: None,
         })
     }
@@ -467,7 +537,35 @@ impl TaskExecutor {
     }
 
     pub async fn save_result(&self, result: &TaskResult) -> Result<()> {
-        // Use a default results directory if not in config
+        let mut conv_manager = self.conversation_manager.lock().await;
+        
+        // Start a new conversation if needed
+        let conversation_id = if let Some(id) = conv_manager.current_conversation_id() {
+            id
+        } else {
+            conv_manager.start_conversation(
+                self.config.agent.model.clone(),
+                Some(self.config.agent.get_system_prompt()),
+            )?
+        };
+        
+        // Save task results to conversation storage
+        let tasks = serde_json::json!({
+            "task_id": result.task_id,
+            "status": result.status,
+            "result": result.result,
+            "error": result.error,
+            "token_stats": result.token_stats,
+            "cost": result.cost,
+            "duration_ms": result.duration_ms,
+        });
+        
+        conv_manager.save_task_results(tasks)?;
+        
+        // Note: Conversation messages are now saved during execution in execute_with_tools/execute_without_tools
+        // This section is kept for backward compatibility but shouldn't be needed anymore
+        
+        // Also save to workspace/results for backward compatibility
         let results_dir = self.config.paths.workspace_dir.join("results");
         if !results_dir.exists() {
             std::fs::create_dir_all(&results_dir)
@@ -479,19 +577,41 @@ impl TaskExecutor {
         std::fs::write(file_path, json)
             .map_err(BedrockError::IoError)?;
         
-        debug!("Task result saved: {}", result.task_id);
+        info!("Task result saved to conversation: {} (task: {})", 
+              conversation_id, result.task_id);
         Ok(())
     }
 
     pub async fn load_result(&self, task_id: &Uuid) -> Result<TaskResult> {
+        // For now, maintain backward compatibility with workspace/results
         let results_dir = self.config.paths.workspace_dir.join("results");
         let file_path = results_dir.join(format!("{task_id}.json"));
         
-        let json = std::fs::read_to_string(file_path)
-            .map_err(BedrockError::IoError)?;
+        if file_path.exists() {
+            let json = std::fs::read_to_string(file_path)
+                .map_err(BedrockError::IoError)?;
+            
+            let result: TaskResult = serde_json::from_str(&json)?;
+            Ok(result)
+        } else {
+            Err(BedrockError::NotFound(format!("Task result not found: {}", task_id)))
+        }
+    }
+    
+    /// Resume a conversation by ID
+    pub async fn resume_conversation(&self, conversation_id: Uuid) -> Result<()> {
+        let mut conv_manager = self.conversation_manager.lock().await;
+        let messages = conv_manager.resume_conversation(conversation_id)?;
         
-        let result: TaskResult = serde_json::from_str(&json)?;
-        Ok(result)
+        info!("Resumed conversation {} with {} messages", 
+              conversation_id, messages.len());
+        Ok(())
+    }
+    
+    /// List all conversations for the current workspace
+    pub async fn list_conversations(&self) -> Result<Vec<bedrock_conversation::metadata::ConversationSummary>> {
+        let conv_manager = self.conversation_manager.lock().await;
+        conv_manager.list_conversations()
     }
 }
 
@@ -505,6 +625,7 @@ impl Clone for TaskExecutor {
             active_tasks: Arc::clone(&self.active_tasks),
             max_concurrent_tasks: self.max_concurrent_tasks,
             max_tool_iterations: self.max_tool_iterations,
+            conversation_manager: Arc::clone(&self.conversation_manager),
         }
     }
 }

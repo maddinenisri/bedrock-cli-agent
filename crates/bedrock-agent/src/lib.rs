@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use aws_sdk_bedrockruntime::types::{ContentBlock, ConversationRole, Message};
 use bedrock_client::{BedrockClient, ToolDefinition};
 use bedrock_config::AgentConfig;
+use bedrock_conversation::{ConversationManager, TokenUsageStats};
 use bedrock_core::{
     Agent as AgentTrait, BedrockError, CostDetails, Result, StreamResult,
     Task, TaskResult, TaskStatus, TokenStatistics,
@@ -77,7 +78,7 @@ impl Agent {
             Arc::clone(&bedrock_client),
             Arc::clone(&tool_registry),
             Arc::new(config.clone()),
-        ));
+        )?);
         
         Ok(Self {
             config: Arc::new(config),
@@ -105,6 +106,14 @@ impl Agent {
     pub async fn chat(&self, prompt: &str) -> Result<String> {
         info!("Processing chat prompt");
         
+        // Initialize conversation manager for non-streaming
+        let mut conv_manager = ConversationManager::new()?;
+        let conversation_id = conv_manager.start_conversation(
+            self.config.agent.model.clone(),
+            Some(self.config.agent.get_system_prompt()),
+        )?;
+        debug!("Started conversation {} for non-streaming chat", conversation_id);
+        
         // Build tool definitions if tools are available
         let tool_definitions = if !self.tool_registry.list().is_empty() {
             Some(
@@ -129,8 +138,15 @@ impl Agent {
             .build()
             .map_err(|e| BedrockError::Unknown(e.to_string()))?;
 
+        // Save user message to conversation using save_bedrock_message for consistency
+        debug!("Saving user message to conversation");
+        conv_manager.save_bedrock_message(&user_message, None)?;
+        debug!("User message saved successfully");
+
         let mut conversation = vec![user_message];
         let mut iterations = 0;
+        let mut total_input_tokens = 0usize;
+        let mut total_output_tokens = 0usize;
         const MAX_ITERATIONS: usize = 10;
 
         loop {
@@ -150,11 +166,32 @@ impl Agent {
                 )
                 .await?;
 
+            // Track token usage
+            if let Some(usage) = &response.usage {
+                total_input_tokens += usage.input_tokens() as usize;
+                total_output_tokens += usage.output_tokens() as usize;
+            }
+
             // Add assistant response to conversation
             conversation.push(response.message.clone());
 
             // Check if we need to handle tool calls
             if response.has_tool_use() {
+                // Save the assistant message with tool use
+                let response_tokens = if let Some(usage) = &response.usage {
+                    Some(TokenUsageStats {
+                        input_tokens: usage.input_tokens() as u32,
+                        output_tokens: usage.output_tokens() as u32,
+                        total_tokens: usage.total_tokens() as u32,
+                        total_cost: None,
+                    })
+                } else {
+                    None
+                };
+                
+                conv_manager.save_bedrock_message(&response.message, response_tokens)?;
+                debug!("Saved assistant message with tool use");
+                
                 let tool_uses = response.get_tool_uses();
                 
                 if !tool_uses.is_empty() {
@@ -177,6 +214,10 @@ impl Agent {
                         .build()
                         .map_err(|e| BedrockError::Unknown(e.to_string()))?;
                     
+                    // Save tool result message
+                    conv_manager.save_bedrock_message(&tool_result_message, None)?;
+                    debug!("Saved tool result message");
+                    
                     conversation.push(tool_result_message);
                     
                     // Continue conversation
@@ -184,7 +225,26 @@ impl Agent {
                 }
             }
 
-            // No more tool calls, return the response
+            // No more tool calls, save final assistant message and return
+            let final_tokens = if let Some(usage) = &response.usage {
+                Some(TokenUsageStats {
+                    input_tokens: usage.input_tokens() as u32,
+                    output_tokens: usage.output_tokens() as u32,
+                    total_tokens: usage.total_tokens() as u32,
+                    total_cost: Some(self.calculate_cost(total_input_tokens, total_output_tokens).total_cost),
+                })
+            } else {
+                None
+            };
+            
+            if !response.has_tool_use() {
+                conv_manager.save_bedrock_message(&response.message, final_tokens)?;
+                debug!("Saved final assistant message");
+            }
+            
+            info!("Saved non-streaming conversation {} with {} messages", 
+                  conversation_id, conv_manager.get_message_count());
+            
             return Ok(response.get_text_content());
         }
     }
@@ -219,6 +279,14 @@ impl Agent {
     ) -> Result<StreamResult> {
         info!("Processing streaming chat prompt");
         
+        // Initialize conversation manager for streaming
+        let mut conv_manager = ConversationManager::new()?;
+        let conversation_id = conv_manager.start_conversation(
+            self.config.agent.model.clone(),
+            Some(self.config.agent.get_system_prompt()),
+        )?;
+        debug!("Started conversation {} for streaming", conversation_id);
+        
         // Build tool definitions if tools are available
         let tool_definitions = if !self.tool_registry.list().is_empty() {
             Some(
@@ -243,6 +311,11 @@ impl Agent {
             .build()
             .map_err(|e| BedrockError::Unknown(e.to_string()))?;
 
+        // Save user message to conversation using save_bedrock_message for consistency
+        debug!("Saving user message to conversation");
+        conv_manager.save_bedrock_message(&user_message, None)?;
+        debug!("User message saved successfully");
+        
         let mut conversation = vec![user_message];
         let mut iterations = 0;
         let mut total_input_tokens = 0usize;
@@ -281,6 +354,23 @@ impl Agent {
 
             // Check if we need to handle tool calls
             if response.has_tool_use() {
+                // Save the assistant message with tool use to conversation
+                // Calculate token usage for this response
+                let response_tokens = if let Some(usage) = &response.usage {
+                    Some(TokenUsageStats {
+                        input_tokens: usage.input_tokens() as u32,
+                        output_tokens: usage.output_tokens() as u32,
+                        total_tokens: usage.total_tokens() as u32,
+                        total_cost: None, // Will be calculated at the end
+                    })
+                } else {
+                    None
+                };
+                
+                // Save assistant message with tool use
+                conv_manager.save_bedrock_message(&response.message, response_tokens)?;
+                debug!("Saved assistant message with tool use");
+                
                 let tool_uses = response.get_tool_uses();
                 
                 if !tool_uses.is_empty() {
@@ -303,6 +393,10 @@ impl Agent {
                         .build()
                         .map_err(|e| BedrockError::Unknown(e.to_string()))?;
                     
+                    // Save tool result message to conversation
+                    conv_manager.save_bedrock_message(&tool_result_message, None)?;
+                    debug!("Saved tool result message");
+                    
                     conversation.push(tool_result_message);
                     
                     // Continue conversation
@@ -312,10 +406,28 @@ impl Agent {
 
             // No more tool calls, capture the response
             final_response = response.get_text_content();
+            
+            // Save final assistant message if it doesn't have tool use
+            if !response.has_tool_use() {
+                let final_tokens = if let Some(usage) = &response.usage {
+                    Some(TokenUsageStats {
+                        input_tokens: usage.input_tokens() as u32,
+                        output_tokens: usage.output_tokens() as u32,
+                        total_tokens: usage.total_tokens() as u32,
+                        total_cost: None,
+                    })
+                } else {
+                    None
+                };
+                
+                conv_manager.save_bedrock_message(&response.message, final_tokens)?;
+                debug!("Saved final assistant message");
+            }
+            
             break;
         }
 
-        // Calculate cost and prepare result
+        // Calculate final cost and prepare result
         let token_stats = TokenStatistics {
             input_tokens: total_input_tokens,
             output_tokens: total_output_tokens,
@@ -324,6 +436,9 @@ impl Agent {
         };
 
         let cost = self.calculate_cost(total_input_tokens, total_output_tokens);
+        
+        info!("Saved streaming conversation {} with {} messages", 
+              conversation_id, conv_manager.get_message_count());
 
         Ok(StreamResult {
             response: final_response,

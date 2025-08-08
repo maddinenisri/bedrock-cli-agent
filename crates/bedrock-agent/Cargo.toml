@@ -19,6 +19,7 @@ bedrock-tools = { path = "../bedrock-tools" }
 bedrock-mcp = { path = "../bedrock-mcp" }
 bedrock-task = { path = "../bedrock-task" }
 bedrock-metrics = { path = "../bedrock-metrics" }
+bedrock-conversation = { path = "../bedrock-conversation" }
 aws-sdk-bedrockruntime = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }

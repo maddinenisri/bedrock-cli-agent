@@ -9,6 +9,7 @@ members = [
     "crates/bedrock-config",
     "crates/bedrock-metrics",
     "crates/bedrock-agent",
+    "crates/bedrock-conversation",
 ]
 
 [workspace.package]
