@@ -16,6 +16,9 @@ A Rust-based AWS Bedrock LLM agent with built-in tools, caching, and MCP integra
 - ✅ Modular crate architecture
 - ✅ Metrics collection and monitoring
 - ✅ MCP tool integration (stdio/SSE) - Tested with FIGMA and JIRA tools
+- ✅ Conversation management (resume, export, import, delete)
+- ✅ AI-powered conversation summaries
+- ✅ Task continuation with context preservation
 - 📋 Response caching (LRU) - planned
 - 📋 Rate limiting - planned
 
@@ -66,38 +69,200 @@ pricing:
 
 ## Usage
 
-### Execute a single task
+### CLI Command Structure
+
+The CLI uses a unified command structure with four main command groups:
+
+- **`conversation`** - Manage conversations (resume, summary, export, delete)
+- **`task`** - Execute or manage tasks (new, resume, export)
+- **`import`** - Import conversations or tasks from JSON
+- **`list`** - List conversations, tasks, or show statistics
+
+### Task Management
+
 ```bash
-# Basic task execution
-bedrock-agent task --prompt "List all Rust files in the current directory"
+# Execute a new task
+bedrock-agent task "List all Rust files in the current directory"
 
-# With context
-bedrock-agent task --prompt "Analyze this code" --context "Focus on performance"
+# Execute with additional context
+bedrock-agent task "Analyze this code" --context "Focus on performance"
 
-# With streaming (full tool support)
-bedrock-agent task --prompt "Write a story" --stream
+# Execute with streaming
+bedrock-agent task "Write a story about AI" --stream
 
-# Complex multi-tool task
-bedrock-agent task --prompt "Create a hello.txt file and then read it back" --stream
+# Resume a task by ID
+bedrock-agent task <task-id> --resume
+
+# Resume with additional prompt
+bedrock-agent task <task-id> --prompt "Continue with error handling"
+
+# Export task to file
+bedrock-agent task <task-id> --export task-backup.json
 ```
 
-### Interactive chat mode
+### Conversation Management
+
 ```bash
+# Resume a conversation (default action)
+bedrock-agent conversation <conversation-id>
+
+# Resume with streaming
+bedrock-agent conversation <conversation-id> --stream
+
+# Generate AI summary of conversation
+bedrock-agent conversation <conversation-id> --summary
+
+# Export conversation to JSON
+bedrock-agent conversation <conversation-id> --export backup.json
+
+# Delete a conversation
+bedrock-agent conversation <conversation-id> --delete
+
+# Delete without confirmation
+bedrock-agent conversation <conversation-id> --delete --force
+```
+
+### Listing and Statistics
+
+```bash
+# List all conversations (default)
+bedrock-agent list
+
+# List only tasks
+bedrock-agent list --tasks
+
+# List with verbose output
+bedrock-agent list --verbose
+
+# Show conversation statistics
+bedrock-agent list --stats
+
+# List all (conversations and tasks)
+bedrock-agent list --list-type all
+```
+
+### Import/Export
+
+```bash
+# Import a conversation (auto-detects type)
+bedrock-agent import conversation-backup.json
+
+# Import and resume immediately
+bedrock-agent import backup.json --resume
+
+# Import with type specification
+bedrock-agent import data.json --import-type conversation
+
+# Force overwrite existing conversation
+bedrock-agent import backup.json --force
+
+# Import task and resume with streaming
+bedrock-agent import task.json --import-type task --resume --stream
+```
+
+### Interactive Chat Mode
+
+```bash
+# Start interactive chat
 bedrock-agent chat
 
-# With custom system prompt
+# Chat with custom system prompt
 bedrock-agent chat --system "You are a code reviewer"
+
+# Chat with streaming responses
+bedrock-agent chat --stream
 ```
 
-### List available tools
+### Utility Commands
+
 ```bash
+# List available tools
 bedrock-agent tools
+
+# Test AWS connectivity
+bedrock-agent test
+
+# Show help for any command
+bedrock-agent <command> --help
 ```
 
-### Test AWS connectivity
+## Practical Examples
+
+### Example 1: Code Analysis Workflow
 ```bash
-bedrock-agent test
+# Analyze a codebase
+bedrock-agent task "Analyze the Rust codebase and identify performance bottlenecks"
+
+# Export the analysis for later reference
+bedrock-agent task <task-id> --export analysis.json
+
+# Continue with specific improvements
+bedrock-agent task <task-id> --prompt "Focus on the database query optimization"
 ```
+
+### Example 2: Conversation-Based Development
+```bash
+# Start a conversation about a feature
+bedrock-agent chat
+> Help me design a REST API for user management
+> What authentication method should I use?
+> Can you generate the OpenAPI spec?
+
+# Export the conversation for documentation
+bedrock-agent conversation <id> --export api-design.json
+
+# Generate a summary for the team
+bedrock-agent conversation <id> --summary > api-design-summary.md
+```
+
+### Example 3: Backup and Restore Workflow
+```bash
+# Export all conversations for backup
+for id in $(bedrock-agent list | grep -E '^[a-f0-9-]{36}' | awk '{print $1}'); do
+  bedrock-agent conversation $id --export "backup/$id.json"
+done
+
+# Import conversations on another machine
+for file in backup/*.json; do
+  bedrock-agent import "$file"
+done
+```
+
+### Example 4: Task Tracking and Reporting
+```bash
+# View all tasks with status
+bedrock-agent list --tasks --verbose
+
+# Get statistics for the week
+bedrock-agent list --stats
+
+# Export specific task results
+bedrock-agent task <task-id> --export "reports/task-$(date +%Y%m%d).json"
+```
+
+## Migration Guide
+
+If you're upgrading from an older version with separate commands, here's how to migrate:
+
+### Old Commands → New Commands
+
+| Old Command | New Command |
+|------------|------------|
+| `bedrock-agent resume <id>` | `bedrock-agent conversation <id>` |
+| `bedrock-agent list-conversations` | `bedrock-agent list` |
+| `bedrock-agent export-conversation <id>` | `bedrock-agent conversation <id> --export <file>` |
+| `bedrock-agent delete-conversation <id>` | `bedrock-agent conversation <id> --delete` |
+| `bedrock-agent conversation-stats` | `bedrock-agent list --stats` |
+| `bedrock-agent resume-task <id>` | `bedrock-agent task <id> --resume` |
+| `bedrock-agent import-conversation <file>` | `bedrock-agent import <file>` |
+| `bedrock-agent import-task <file>` | `bedrock-agent import <file> --import-type task` |
+
+### Key Changes
+
+1. **Unified Command Structure**: Commands are now grouped logically under `conversation`, `task`, `import`, and `list`
+2. **Auto-Detection**: The CLI can automatically detect UUIDs vs prompts, and conversation vs task imports
+3. **Chained Options**: Multiple operations can be combined (e.g., `--summary --export`)
+4. **Better Defaults**: Resume is the default action for conversations
 
 ## Environment Variables
 

@@ -3,7 +3,7 @@ use bedrock_agent::Agent;
 use bedrock_config::AgentConfig;
 use bedrock_conversation::{ConversationManager, ConversationStorage, MessageEntry, ConversationMetadata};
 use bedrock_core::{Agent as AgentTrait, Task, TaskStatus, TaskResult};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use clap::{Parser, Subcommand};
 use std::fs;
 use std::io::{self, Write};
@@ -382,7 +382,7 @@ async fn test_connectivity(agent: &Agent) -> Result<()> {
 async fn handle_conversation_command(
     agent: Agent,
     id: String,
-    resume: bool,
+    _resume: bool,
     summary: bool,
     export: Option<PathBuf>,
     delete: bool,
@@ -390,7 +390,7 @@ async fn handle_conversation_command(
     stream: bool,
 ) -> Result<()> {
     // Parse the conversation ID
-    let conv_id = Uuid::parse_str(&id)
+    let _conv_id = Uuid::parse_str(&id)
         .map_err(|e| anyhow::anyhow!("Invalid conversation ID: {}", e))?;
     
     // Handle different operations
@@ -513,7 +513,7 @@ async fn detect_import_type(file: &PathBuf) -> Result<ImportType> {
 // Export task function
 async fn export_task(task_id: String, output: PathBuf) -> Result<()> {
     // Parse the task ID
-    let task_uuid = Uuid::parse_str(&task_id)
+    let _task_uuid = Uuid::parse_str(&task_id)
         .map_err(|e| anyhow::anyhow!("Invalid task ID: {}", e))?;
     
     // Find the task in conversations
@@ -978,7 +978,7 @@ async fn generate_conversation_summary(agent: Agent, conversation_id: String) ->
 
 async fn resume_task(agent: Agent, task_id: String, prompt: Option<String>, stream: bool) -> Result<()> {
     // Parse the task ID
-    let task_uuid = Uuid::parse_str(&task_id)
+    let _task_uuid = Uuid::parse_str(&task_id)
         .map_err(|e| anyhow::anyhow!("Invalid task ID: {}", e))?;
     
     // Find the task in conversations
@@ -1099,7 +1099,7 @@ async fn import_conversation(file: PathBuf, force: bool) -> Result<()> {
     let storage = ConversationStorage::new()?;
     
     // Create metadata from import data
-    let metadata = if let Ok(existing_meta) = storage.load_metadata(&conv_id) {
+    let _metadata = if let Ok(existing_meta) = storage.load_metadata(&conv_id) {
         existing_meta
     } else {
         // Create new metadata
