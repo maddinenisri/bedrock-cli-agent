@@ -1,0 +1,23 @@
+# MCP Stdio Configuration for Figma Developer MCP Server
+# This server provides access to Figma API functionality via MCP
+
+mcpServers:
+  figma-mcp-server:
+    command: "npx"
+    args: 
+      - "-y"
+      - "figma-developer-mcp"
+      - "--stdio"
+    env:
+      FIGMA_API_KEY: "${FIGMA_API_KEY}"  # Set your Figma API key as environment variable
+    timeout: 60000
+    disabled: false
+    health_check:
+      interval: 30
+      timeout: 10
+      max_failures: 3
+    restart_policy:
+      max_retries: 3
+      initial_delay: 5
+      max_delay: 60
+      backoff: exponential

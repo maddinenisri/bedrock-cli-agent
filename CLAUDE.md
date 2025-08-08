@@ -1,481 +1,272 @@
-# CLAUDE.md
+# Claude Code Configuration - SPARC Development Environment
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## 🚨 CRITICAL: CONCURRENT EXECUTION & FILE MANAGEMENT
+
+**ABSOLUTE RULES**:
+1. ALL operations MUST be concurrent/parallel in a single message
+2. **NEVER save working files, text/mds and tests to the root folder**
+3. ALWAYS organize files in appropriate subdirectories
+
+### ⚡ GOLDEN RULE: "1 MESSAGE = ALL RELATED OPERATIONS"
+
+**MANDATORY PATTERNS:**
+- **TodoWrite**: ALWAYS batch ALL todos in ONE call (5-10+ todos minimum)
+- **Task tool**: ALWAYS spawn ALL agents in ONE message with full instructions
+- **File operations**: ALWAYS batch ALL reads/writes/edits in ONE message
+- **Bash commands**: ALWAYS batch ALL terminal operations in ONE message
+- **Memory operations**: ALWAYS batch ALL memory store/retrieve in ONE message
+
+### 📁 File Organization Rules
+
+**NEVER save to root folder. Use these directories:**
+- `/src` - Source code files
+- `/tests` - Test files
+- `/docs` - Documentation and markdown files
+- `/config` - Configuration files
+- `/scripts` - Utility scripts
+- `/examples` - Example code
 
 ## Project Overview
 
-**Bedrock CLI Agent** - A production-grade Rust AWS Bedrock LLM agent with streaming support, built-in tools, and comprehensive metrics tracking. The project uses a modular workspace architecture with specialized crates under `/crates/`.
+This project uses SPARC (Specification, Pseudocode, Architecture, Refinement, Completion) methodology with Claude-Flow orchestration for systematic Test-Driven Development.
 
-## Quick Start
+## SPARC Commands
+
+### Core Commands
+- `npx claude-flow sparc modes` - List available modes
+- `npx claude-flow sparc run <mode> "<task>"` - Execute specific mode
+- `npx claude-flow sparc tdd "<feature>"` - Run complete TDD workflow
+- `npx claude-flow sparc info <mode>` - Get mode details
+
+### Batchtools Commands
+- `npx claude-flow sparc batch <modes> "<task>"` - Parallel execution
+- `npx claude-flow sparc pipeline "<task>"` - Full pipeline processing
+- `npx claude-flow sparc concurrent <mode> "<tasks-file>"` - Multi-task processing
+
+### Build Commands
+- `npm run build` - Build project
+- `npm run test` - Run tests
+- `npm run lint` - Linting
+- `npm run typecheck` - Type checking
+
+## SPARC Workflow Phases
+
+1. **Specification** - Requirements analysis (`sparc run spec-pseudocode`)
+2. **Pseudocode** - Algorithm design (`sparc run spec-pseudocode`)
+3. **Architecture** - System design (`sparc run architect`)
+4. **Refinement** - TDD implementation (`sparc tdd`)
+5. **Completion** - Integration (`sparc run integration`)
+
+## Code Style & Best Practices
+
+- **Modular Design**: Files under 500 lines
+- **Environment Safety**: Never hardcode secrets
+- **Test-First**: Write tests before implementation
+- **Clean Architecture**: Separate concerns
+- **Documentation**: Keep updated
+
+## 🚀 Available Agents (54 Total)
+
+### Core Development
+`coder`, `reviewer`, `tester`, `planner`, `researcher`
+
+### Swarm Coordination
+`hierarchical-coordinator`, `mesh-coordinator`, `adaptive-coordinator`, `collective-intelligence-coordinator`, `swarm-memory-manager`
+
+### Consensus & Distributed
+`byzantine-coordinator`, `raft-manager`, `gossip-coordinator`, `consensus-builder`, `crdt-synchronizer`, `quorum-manager`, `security-manager`
+
+### Performance & Optimization
+`perf-analyzer`, `performance-benchmarker`, `task-orchestrator`, `memory-coordinator`, `smart-agent`
+
+### GitHub & Repository
+`github-modes`, `pr-manager`, `code-review-swarm`, `issue-tracker`, `release-manager`, `workflow-automation`, `project-board-sync`, `repo-architect`, `multi-repo-swarm`
+
+### SPARC Methodology
+`sparc-coord`, `sparc-coder`, `specification`, `pseudocode`, `architecture`, `refinement`
+
+### Specialized Development
+`backend-dev`, `mobile-dev`, `ml-developer`, `cicd-engineer`, `api-docs`, `system-architect`, `code-analyzer`, `base-template-generator`
+
+### Testing & Validation
+`tdd-london-swarm`, `production-validator`
+
+### Migration & Planning
+`migration-planner`, `swarm-init`
+
+## 🎯 Claude Code vs MCP Tools
+
+### Claude Code Handles ALL:
+- File operations (Read, Write, Edit, MultiEdit, Glob, Grep)
+- Code generation and programming
+- Bash commands and system operations
+- Implementation work
+- Project navigation and analysis
+- TodoWrite and task management
+- Git operations
+- Package management
+- Testing and debugging
+
+### MCP Tools ONLY:
+- Coordination and planning
+- Memory management
+- Neural features
+- Performance tracking
+- Swarm orchestration
+- GitHub integration
+
+**KEY**: MCP coordinates, Claude Code executes.
+
+## 🚀 Quick Setup
 
 ```bash
-# Build and run with default config
-cargo build --release
-./target/release/bedrock-agent --config ./config.yaml task -p "Write hello to test.txt and read it back"
-
-# Stream mode for real-time output
-./target/release/bedrock-agent task --stream -p "List files in current directory"
-
-# Interactive chat
-./target/release/bedrock-agent chat --stream
+# Add Claude Flow MCP server
+claude mcp add claude-flow npx claude-flow@alpha mcp start
 ```
 
-## Build and Development Commands
+## MCP Tool Categories
 
+### Coordination
+`swarm_init`, `agent_spawn`, `task_orchestrate`
+
+### Monitoring
+`swarm_status`, `agent_list`, `agent_metrics`, `task_status`, `task_results`
+
+### Memory & Neural
+`memory_usage`, `neural_status`, `neural_train`, `neural_patterns`
+
+### GitHub Integration
+`github_swarm`, `repo_analyze`, `pr_enhance`, `issue_triage`, `code_review`
+
+### System
+`benchmark_run`, `features_detect`, `swarm_monitor`
+
+## 📋 Agent Coordination Protocol
+
+### Every Agent MUST:
+
+**1️⃣ BEFORE Work:**
 ```bash
-# Build commands
-cargo build --release        # Production build with optimizations
-cargo build                 # Debug build for development
-cargo test                  # Run all tests across workspace
-cargo test -p <crate-name>  # Run tests for specific crate
-
-# Code quality
-cargo fmt                   # Format all code
-cargo clippy               # Lint and check for issues
-cargo clippy --fix        # Auto-fix linting issues
-
-# Development with logging
-RUST_LOG=debug cargo run -- test    # Debug logging
-RUST_LOG=bedrock_agent=trace cargo run -- task -p "prompt"  # Trace specific crate
-
-# Run examples
-cargo run --example simple_task      # Simple task demonstration
-cargo run --example cli_demo        # CLI functionality demo
+npx claude-flow@alpha hooks pre-task --description "[task]"
+npx claude-flow@alpha hooks session-restore --session-id "swarm-[id]"
 ```
 
-## CLI Commands and Usage
-
-### Task Execution (Single Prompt)
+**2️⃣ DURING Work:**
 ```bash
-# Basic task
-./target/release/bedrock-agent task -p "Your prompt here"
-
-# Streaming mode (real-time output with metrics)
-./target/release/bedrock-agent task --stream -p "Your prompt here"
-
-# With additional context
-./target/release/bedrock-agent task -p "Analyze this" -c "Additional context"
-
-# With verbose logging
-./target/release/bedrock-agent --verbose task -p "Debug this"
+npx claude-flow@alpha hooks post-edit --file "[file]" --memory-key "swarm/[agent]/[step]"
+npx claude-flow@alpha hooks notify --message "[what was done]"
 ```
 
-### Interactive Chat Mode
+**3️⃣ AFTER Work:**
 ```bash
-# Standard chat
-./target/release/bedrock-agent chat
-
-# Streaming chat (real-time responses)
-./target/release/bedrock-agent chat --stream
-
-# With custom system prompt
-./target/release/bedrock-agent chat -s "You are a helpful coding assistant"
+npx claude-flow@alpha hooks post-task --task-id "[task]"
+npx claude-flow@alpha hooks session-end --export-metrics true
 ```
 
-### Utility Commands
-```bash
-# List available tools
-./target/release/bedrock-agent tools
+## 🎯 Concurrent Execution Examples
 
-# Test AWS connectivity and model access
-./target/release/bedrock-agent test
-
-# Show help
-./target/release/bedrock-agent --help
-```
-
-## Test Scenarios
-
-### File Operations
-```bash
-# Write and read files
-cargo run -- task --stream -p "Write 'Hello World' to test.txt, then read it back"
-
-# Multiple file operations
-cargo run -- task --stream -p "Write hello to file1.txt and world to file2.txt, read both files and write combined output to file3.txt"
-
-# Directory operations
-cargo run -- task --stream -p "List all files in the current directory and count them"
-
-# File manipulation with validation
-cargo run -- task --stream -p "Create a config.json with sample data, read it back, and validate the JSON structure"
-```
-
-### Code Search and Analysis
-```bash
-# Search for patterns
-cargo run -- task --stream -p "Find all TODO comments in the codebase"
-
-# Grep for specific content
-cargo run -- task --stream -p "Search for functions that handle streaming in the codebase"
-
-# Find files by pattern
-cargo run -- task --stream -p "Find all Rust files in the crates directory"
-
-# Code analysis
-cargo run -- task --stream -p "Analyze the main.rs file and explain its structure"
-```
-
-### System Commands
-```bash
-# Execute bash commands
-cargo run -- task --stream -p "Show current directory and list files"
-
-# Complex workflows
-cargo run -- task --stream -p "Create a new directory called 'test_output', create three files inside it with different content, then list and read all files"
-
-# System information
-cargo run -- task --stream -p "Show system information including OS, current user, and directory"
-```
-
-### Streaming Mode Features
-```bash
-# Real-time output with token tracking
-cargo run -- task --stream -p "Write a long story to story.txt and show progress"
-
-# Tool execution with live feedback
-cargo run -- task --stream -p "Search for all error handling in the codebase and summarize findings"
-
-# Cost tracking demonstration
-cargo run -- task --stream -p "Perform multiple operations and show the total cost"
-```
-
-## Architecture
-
-### Workspace Crates (`/crates/`)
-- **bedrock-core**: Foundation types (`Task`, `Agent` trait, `BedrockError`, `StreamResult`)
-- **bedrock-client**: AWS Bedrock Converse API with streaming support
-- **bedrock-config**: YAML config with `${VAR:-default}` env substitution
-- **bedrock-tools**: File ops, search (grep/ripgrep), bash execution with safety
-- **bedrock-task**: UUID-based task tracking and queue management
-- **bedrock-agent**: Main orchestration, tool execution loop, conversation management
-
-### Key Design Patterns
-- **AWS SDK Native Types**: Direct use of `aws_sdk_bedrockruntime` types
-- **Streaming with Metrics**: `StreamResult` returns both response and statistics
-- **Tool Result Format**: Uses `ContentBlock::ToolResult` for proper tool responses
-- **Environment Variable Substitution**: Supports `${VAR:-default}` patterns
-- **Workspace Isolation**: All file operations restricted to `WORKSPACE_DIR`
-
-## Configuration
-
-Primary config file: `config.yaml`
-
-```yaml
-agent:
-  name: bedrock-agent
-  model: "anthropic.claude-3-5-sonnet-20241022-v2:0"
-  temperature: 0.7
-  max_tokens: 4096
+### ✅ CORRECT (Single Message):
+```javascript
+[BatchTool]:
+  // Initialize swarm
+  mcp__claude-flow__swarm_init { topology: "mesh", maxAgents: 6 }
+  mcp__claude-flow__agent_spawn { type: "researcher" }
+  mcp__claude-flow__agent_spawn { type: "coder" }
+  mcp__claude-flow__agent_spawn { type: "tester" }
   
-aws:
-  region: "us-east-1"
-  profile: "default"  # Optional
-  role_arn: null     # Optional for role assumption
-
-tools:
-  allowed: 
-    - fs_read
-    - fs_write
-    - fs_list
-    - grep
-    - find
-    - execute_bash
-  permissions:
-    execute_bash:
-      permission: ask  # allow, ask, or deny
-      constraint: "Requires user confirmation"
-
-pricing:
-  "anthropic.claude-3-5-sonnet-20241022-v2:0":
-    input_per_1k: 0.003
-    output_per_1k: 0.015
-    currency: USD
-
-limits:
-  max_tpm: 100000    # Tokens per minute
-  max_rpm: 100       # Requests per minute  
-  budget_limit: 10.0
-  alert_threshold: 0.8
-
-paths:
-  home_dir: "${HOME_DIR:-~/.bedrock-agent}"
-  workspace_dir: "${WORKSPACE_DIR:-./workspace}"
+  // Spawn agents with Task tool
+  Task("Research agent: Analyze requirements...")
+  Task("Coder agent: Implement features...")
+  Task("Tester agent: Create test suite...")
+  
+  // Batch todos
+  TodoWrite { todos: [
+    {id: "1", content: "Research", status: "in_progress", priority: "high"},
+    {id: "2", content: "Design", status: "pending", priority: "high"},
+    {id: "3", content: "Implement", status: "pending", priority: "high"},
+    {id: "4", content: "Test", status: "pending", priority: "medium"},
+    {id: "5", content: "Document", status: "pending", priority: "low"}
+  ]}
+  
+  // File operations
+  Bash "mkdir -p app/{src,tests,docs}"
+  Write "app/src/index.js"
+  Write "app/tests/index.test.js"
+  Write "app/docs/README.md"
 ```
 
-### Environment Variables
-```bash
-# Required
-export AWS_REGION=us-east-1
-
-# Optional AWS config
-export AWS_PROFILE=your-profile
-export AWS_ACCESS_KEY_ID=your-key
-export AWS_SECRET_ACCESS_KEY=your-secret
-
-# Path configuration
-export WORKSPACE_DIR=/path/to/workspace
-export HOME_DIR=/path/to/home
-
-# Logging
-export RUST_LOG=debug  # or trace, info, warn, error
+### ❌ WRONG (Multiple Messages):
+```javascript
+Message 1: mcp__claude-flow__swarm_init
+Message 2: Task("agent 1")
+Message 3: TodoWrite { todos: [single todo] }
+Message 4: Write "file.js"
+// This breaks parallel coordination!
 ```
 
-## Tool System
+## Performance Benefits
 
-### Built-in Tools
+- **84.8% SWE-Bench solve rate**
+- **32.3% token reduction**
+- **2.8-4.4x speed improvement**
+- **27+ neural models**
 
-#### File System Tools
-- **fs_read**: Read file contents (max 10MB default)
-- **fs_write**: Write content to files 
-- **fs_list**: List directory contents
+## Hooks Integration
 
-#### Search Tools  
-- **grep**: Pattern search in files (uses ripgrep)
-- **find**: Find files by name patterns
+### Pre-Operation
+- Auto-assign agents by file type
+- Validate commands for safety
+- Prepare resources automatically
+- Optimize topology by complexity
+- Cache searches
 
-#### Execution Tools
-- **execute_bash**: Run bash commands with timeout
+### Post-Operation
+- Auto-format code
+- Train neural patterns
+- Update memory
+- Analyze performance
+- Track token usage
 
-### Security Features
-- Path canonicalization prevents traversal attacks
-- Workspace directory enforcement
-- File size limits
-- Command timeout controls
-- Permission system (allow/ask/deny)
+### Session Management
+- Generate summaries
+- Persist state
+- Track metrics
+- Restore context
+- Export workflows
 
-## Testing Strategy
+## Advanced Features (v2.0.0)
 
-### Unit Tests
-```bash
-# Run all tests
-cargo test
+- 🚀 Automatic Topology Selection
+- ⚡ Parallel Execution (2.8-4.4x speed)
+- 🧠 Neural Training
+- 📊 Bottleneck Analysis
+- 🤖 Smart Auto-Spawning
+- 🛡️ Self-Healing Workflows
+- 💾 Cross-Session Memory
+- 🔗 GitHub Integration
 
-# Run with output
-cargo test -- --nocapture
+## Integration Tips
 
-# Test specific crate
-cargo test -p bedrock-client
+1. Start with basic swarm init
+2. Scale agents gradually
+3. Use memory for context
+4. Monitor progress regularly
+5. Train patterns from success
+6. Enable hooks automation
+7. Use GitHub tools first
 
-# Test specific function
-cargo test test_streaming_response
-```
+## Support
 
-### Integration Tests
-```bash
-# Full agent tests
-cargo test -p bedrock-agent --test integration
+- Documentation: https://github.com/ruvnet/claude-flow
+- Issues: https://github.com/ruvnet/claude-flow/issues
 
-# Tool tests
-cargo test -p bedrock-tools
-```
+---
 
-### Example Programs
-```bash
-# Simple task example
-cargo run --example simple_task
+Remember: **Claude Flow coordinates, Claude Code creates!**
 
-# CLI demo
-cargo run --example cli_demo
-```
-
-## AWS Integration
-
-### Credential Chain Support
-1. Environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`)
-2. AWS profile from `~/.aws/credentials`
-3. IAM roles (EC2/ECS/Lambda)
-4. IRSA for Kubernetes
-
-### Bedrock Features Used
-- **Converse API**: Multi-turn conversations
-- **Streaming**: Real-time token generation
-- **Tool Use**: Function calling within conversations
-- **Token Usage**: Automatic token counting from API
-
-## Cost and Metrics
-
-### Token Tracking
-```rust
-pub struct TokenStatistics {
-    pub input_tokens: usize,
-    pub output_tokens: usize,
-    pub total_tokens: usize,
-}
-```
-
-### Cost Calculation
-```rust
-pub struct CostDetails {
-    pub model: String,
-    pub input_cost: f64,
-    pub output_cost: f64,
-    pub total_cost: f64,
-    pub currency: String,
-}
-```
-
-### Streaming with Metrics
-The streaming mode now returns comprehensive metrics:
-```rust
-pub struct StreamResult {
-    pub response: String,
-    pub token_stats: TokenStatistics,
-    pub cost: CostDetails,
-}
-```
-
-## Development Workflow
-
-### Adding New Tools
-1. Create tool in `bedrock-tools/src/tools/`
-2. Implement `Tool` trait
-3. Register in `ToolRegistry`
-4. Add to config `allowed` list
-
-### Modifying AWS Interaction
-1. Update `bedrock-client/src/lib.rs` for API changes
-2. Modify `bedrock-client/src/streaming.rs` for stream processing
-3. Update message building in `bedrock-agent/src/lib.rs`
-
-### Configuration Changes
-1. Update `bedrock-config/src/lib.rs` structures
-2. Modify example configs
-3. Update env substitution if needed
-
-## Important Implementation Details
-
-### Message Format
-```rust
-// Tool results must be sent as User messages
-let tool_result_message = Message::builder()
-    .role(ConversationRole::User)
-    .set_content(Some(
-        tool_results.into_iter()
-            .map(ContentBlock::ToolResult)
-            .collect(),
-    ))
-    .build()
-```
-
-### Streaming Response Reconstruction
-```rust
-// Accumulate text and tools from stream events
-match event {
-    ConverseStreamOutput::ContentBlockDelta(delta) => {
-        // Accumulate text chunks
-    }
-    ConverseStreamOutput::ContentBlockStart(start) => {
-        // Start tool use accumulation
-    }
-    ConverseStreamOutput::ContentBlockStop(_) => {
-        // Finalize tool use
-    }
-    ConverseStreamOutput::Metadata(metadata) => {
-        // Capture token usage
-    }
-}
-```
-
-### Environment Variable Substitution
-```rust
-// Supports ${VAR:-default} pattern
-static ENV_VAR_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"\$\{([A-Z_][A-Z0-9_]*)(?::-([^}]*))?\}").unwrap()
-});
-```
-
-## Current Status
-
-### Completed Features (✅)
-- Core infrastructure with modular crates
-- AWS Bedrock integration with streaming
-- Full tool system (file, search, bash)
-- Token tracking and cost calculation
-- Environment variable substitution
-- Streaming mode with metrics display
-- Tool execution loop without repetition
-- Proper AWS SDK type usage
-
-### In Progress (🚧)
-- Response caching (LRU) - Draft plan created
-- Rate limiting - Issue #15
-- MCP integration - Crate exists
-
-### Known Issues and Solutions
-- **Issue #36**: Fixed - Streaming now shows token stats
-- **Tool Repetition**: Fixed - Proper ContentBlock::ToolResult usage
-- **Variable Substitution**: Fixed - Regex-based substitution
-
-## Performance Optimization
-
-### Current Optimizations
-- Streaming responses for low latency
-- Parallel tool execution where possible
-- Configuration caching
-- Efficient message accumulation
-
-### Future Optimizations
-- LRU cache for non-tool responses
-- Request batching for rate limits
-- Connection pooling for AWS SDK
-
-## Troubleshooting
-
-### Common Issues
-
-1. **AWS Credentials Not Found**
-   ```bash
-   aws configure
-   # Or set environment variables
-   export AWS_REGION=us-east-1
-   export AWS_PROFILE=your-profile
-   ```
-
-2. **Model Access Denied**
-   ```bash
-   # Test connectivity
-   ./target/release/bedrock-agent test
-   # Check IAM permissions for bedrock:InvokeModel
-   ```
-
-3. **Tool Execution Failed**
-   - Check workspace directory exists
-   - Verify tool permissions in config
-   - Check file size limits
-
-4. **Variable Not Substituted**
-   ```bash
-   # Ensure variable is exported
-   export WORKSPACE_DIR=/absolute/path
-   # Not just set in shell
-   ```
-
-5. **Streaming Not Working**
-   - Ensure using `--stream` flag
-   - Check for network/proxy issues
-   - Verify streaming endpoint access
-
-## Security Considerations
-
-- **Path Traversal**: Prevented via canonicalization
-- **Command Injection**: Bash execution can require confirmation
-- **File Size Limits**: Default 10MB max read
-- **Workspace Isolation**: Operations restricted to WORKSPACE_DIR
-- **AWS Credentials**: Follow AWS SDK best practices
-- **No Secrets in Code**: Use environment variables
-
-## Contributing Guidelines
-
-1. **Code Style**: Run `cargo fmt` before commits
-2. **Linting**: Fix all `cargo clippy` warnings
-3. **Testing**: Add tests for new features
-4. **Documentation**: Update this file for major changes
-5. **Commits**: Use conventional commit format
-
-## References
-
-- [AWS Bedrock Converse API](https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters.html)
-- [AWS SDK for Rust](https://docs.aws.amazon.com/sdk-for-rust/latest/dg/welcome.html)
-- [Tokio Async Runtime](https://tokio.rs/)
-- [Project Issues](https://github.com/maddinenisri/bedrock-cli-agent/issues)
+# important-instruction-reminders
+Do what has been asked; nothing more, nothing less.
+NEVER create files unless they're absolutely necessary for achieving your goal.
+ALWAYS prefer editing an existing file to creating a new one.
+NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.
+Never save working files, text/mds and tests to the root folder.

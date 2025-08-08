@@ -8,7 +8,6 @@
 
 use anyhow::Result;
 use bedrock_agent::Agent;
-use bedrock_client::BedrockClient;
 use bedrock_config::AgentConfig;
 use bedrock_mcp::{McpManager, McpServerConfig};
 use bedrock_tools::ToolRegistry;
@@ -27,7 +26,7 @@ async fn main() -> Result<()> {
         .init();
     
     info!("🚀 Starting MCP Tool Execution Test with Bedrock LLM");
-    info!("=" .repeat(60));
+    info!("{}", "=".repeat(60));
     
     // Create tool registry
     let tool_registry = Arc::new(ToolRegistry::new());
@@ -69,29 +68,36 @@ async fn main() -> Result<()> {
     // Create test file for demonstration
     let test_file_path = "/tmp/mcp_test.txt";
     let test_content = "Hello from MCP Integration Test!\nThis file was created to test MCP tools with Bedrock LLM.\nTimestamp: {}";
-    let content_with_time = test_content.replace("{}", &chrono::Local::now().to_string());
+    // Use a simple timestamp instead of chrono for testing
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let content_with_time = test_content.replace("{}", &timestamp.to_string());
     fs::write(test_file_path, &content_with_time)?;
     info!("\n📝 Created test file: {}", test_file_path);
     
     // Create Bedrock agent
     let agent_config = AgentConfig {
-        name: "mcp-tool-test".to_string(),
-        model_id: "anthropic.claude-3-haiku-20240307-v1:0".to_string(),
-        region: "us-east-1".to_string(),
-        system_prompt: Some(
-            "You are a helpful assistant with access to filesystem tools via MCP. \
-             You can read files, write files, list directories, and perform other file operations. \
-             When asked to use tools, please execute them and report the results."
-                .to_string()
-        ),
-        temperature: Some(0.3),
-        max_tokens: Some(2000),
-        tools_enabled: true,
+        agent: bedrock_config::AgentSettings {
+            name: "mcp-tool-test".to_string(),
+            model: "anthropic.claude-3-haiku-20240307-v1:0".to_string(),
+            temperature: 0.3,
+            max_tokens: 2000,
+        },
+        aws: bedrock_config::AwsSettings {
+            region: "us-east-1".to_string(),
+            profile: None,
+            role_arn: None,
+        },
+        tools: bedrock_config::ToolSettings {
+            allowed: vec!["fs_read".to_string(), "fs_write".to_string(), "fs_list".to_string()],
+            permissions: std::collections::HashMap::new(),
+        },
         ..Default::default()
     };
     
-    let bedrock_client = BedrockClient::new(&agent_config.region).await?;
-    let agent = Agent::new(agent_config, bedrock_client, tool_registry.clone())?;
+    let agent = Agent::new(agent_config).await?;
     
     // Test 1: Ask LLM to list available file tools
     info!("\n🧪 Test 1: Asking LLM about available file tools...");
@@ -147,7 +153,7 @@ async fn main() -> Result<()> {
     let _ = fs::remove_file("/tmp/summary.txt");
     
     info!("\n✅ MCP Tool Execution Test Complete!");
-    info!("=" .repeat(60));
+    info!("{}", "=".repeat(60));
     info!("\n📊 Test Results:");
     info!("  ✓ LLM successfully discovered MCP tools");
     info!("  ✓ LLM could read files using MCP tools");

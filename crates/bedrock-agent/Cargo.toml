@@ -8,7 +8,7 @@ repository.workspace = true
 description = "Main agent orchestration for Bedrock CLI Agent"
 
 [[bin]]
-name = "bedrock-agent"
+name = "bedrock-agent-lib"
 path = "src/main.rs"
 
 [dependencies]

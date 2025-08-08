@@ -7,6 +7,7 @@ use std::sync::{Arc, RwLock};
 pub mod fs_tools;
 pub mod search_tools;
 pub mod execute_bash;
+pub mod security;
 
 pub use fs_tools::{FileReadTool, FileWriteTool, FileListTool};
 pub use search_tools::{GrepTool, FindTool, RipgrepTool};

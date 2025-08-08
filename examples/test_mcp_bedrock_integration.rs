@@ -9,7 +9,6 @@
 
 use anyhow::Result;
 use bedrock_agent::Agent;
-use bedrock_client::BedrockClient;
 use bedrock_config::AgentConfig;
 use bedrock_mcp::{McpManager, McpServerConfig};
 use bedrock_tools::ToolRegistry;
@@ -26,7 +25,7 @@ async fn main() -> Result<()> {
         .init();
     
     info!("🚀 Starting MCP + Bedrock LLM Integration Test");
-    info!("=" .repeat(60));
+    info!("{}", "=".repeat(60));
     
     // Step 1: Create tool registry
     info!("\n📦 Step 1: Creating tool registry...");
@@ -127,21 +126,26 @@ async fn main() -> Result<()> {
     
     // Load or create agent configuration
     let agent_config = AgentConfig {
-        name: "test-mcp-agent".to_string(),
-        model_id: "anthropic.claude-3-haiku-20240307-v1:0".to_string(),
-        region: "us-east-1".to_string(),
-        system_prompt: Some("You are a helpful assistant with access to MCP tools including Figma and filesystem operations. When asked about available tools, list all the tools you have access to.".to_string()),
-        temperature: Some(0.7),
-        max_tokens: Some(2000),
-        tools_enabled: true,
+        agent: bedrock_config::AgentSettings {
+            name: "test-mcp-agent".to_string(),
+            model: "anthropic.claude-3-haiku-20240307-v1:0".to_string(),
+            temperature: 0.7,
+            max_tokens: 2000,
+        },
+        aws: bedrock_config::AwsSettings {
+            region: "us-east-1".to_string(),
+            profile: None,
+            role_arn: None,
+        },
+        tools: bedrock_config::ToolSettings {
+            allowed: vec![],  // Allow all tools
+            permissions: std::collections::HashMap::new(),
+        },
         ..Default::default()
     };
     
-    // Create Bedrock client
-    let bedrock_client = BedrockClient::new(&agent_config.region).await?;
-    
     // Create agent with tool registry containing MCP tools
-    let agent = Agent::new(agent_config, bedrock_client, tool_registry.clone())?;
+    let agent = Agent::new(agent_config).await?;
     
     // Step 7: Test with LLM - Ask it to list available tools
     info!("\n💬 Step 7: Testing with Bedrock LLM...");
@@ -177,7 +181,7 @@ async fn main() -> Result<()> {
     mcp_manager.stop_all().await?;
     
     info!("\n✅ MCP + Bedrock Integration Test Complete!");
-    info!("=" .repeat(60));
+    info!("{}", "=".repeat(60));
     info!("\n📊 Summary:");
     info!("  - MCP servers started: {}", running_servers.len());
     info!("  - MCP tools discovered: {}", total_mcp_tools);
