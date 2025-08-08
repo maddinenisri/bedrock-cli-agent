@@ -54,6 +54,21 @@ impl Ord for QueuedTask {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TodoItem {
+    pub id: Uuid,
+    pub description: String,
+}
+
+impl TodoItem {
+    pub fn new(description: impl Into<String>) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            description: description.into(),
+        }
+    }
+}
+
 pub struct TaskExecutor {
     bedrock_client: Arc<BedrockClient>,
     tool_registry: Arc<ToolRegistry>,
@@ -125,6 +140,41 @@ impl TaskExecutor {
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
         }
+    }
+
+    pub async fn execute_sequence<F, P>(
+        &self,
+        mut todos: Vec<TodoItem>,
+        mut execute: F,
+        mut planner: P,
+    ) -> Result<Vec<TodoItem>>
+    where
+        F: FnMut(&TodoItem) -> Result<()>,
+        P: FnMut(&[TodoItem]) -> Result<Vec<TodoItem>>,
+    {
+        let mut index = 0;
+        while index < todos.len() {
+            let todo = todos[index].clone();
+
+            if let Err(e) = execute(&todo) {
+                error!("Todo {} failed: {}", todo.id, e);
+            }
+
+            match planner(&todos[..=index]) {
+                Ok(mut new_items) => {
+                    if !new_items.is_empty() {
+                        todos.append(&mut new_items);
+                    }
+                }
+                Err(e) => {
+                    error!("Planner error: {}", e);
+                }
+            }
+
+            index += 1;
+        }
+
+        Ok(todos)
     }
 
     #[instrument(skip(self, task), fields(task_id = %task.task_id))]
