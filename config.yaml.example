@@ -1,55 +1,29 @@
-# Bedrock CLI Agent Configuration
-# 
-# This is a sample configuration file. Copy this to 'config.yaml' and update
-# with your actual values. NEVER commit real API keys or secrets to version control.
-#
-# Environment variables are supported using ${VAR} or ${VAR:-default} syntax
-
-# Agent Configuration
 agent:
   name: "bedrock-assistant"
-  # Available models:
-  # - us.anthropic.claude-3-5-sonnet-20241022-v2:0 (recommended)
-  # - anthropic.claude-3-5-haiku-20241022-v1:0 (faster, cheaper)
-  # - anthropic.claude-3-opus-20240229-v1:0 (most capable)
   model: "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
   max_tokens: 4096
-  temperature: 0.7  # 0.0-1.0, higher = more creative
+  temperature: 0.7
   max_retries: 3
   timeout_seconds: 300
 
-# AWS Configuration
 aws:
-  region: "${AWS_REGION:-us-east-1}"
-  # Uncomment and set if using a specific AWS profile
-  # profile: "${AWS_PROFILE}"
-  # Uncomment for IAM role assumption (e.g., in EKS with IRSA)
-  # role_arn: "${AWS_ROLE_ARN}"
+  region: "us-east-1"
+  # Optional: Use a specific AWS profile
+  # profile: "my-profile"
+  # Optional: Use a specific role ARN (for IRSA)
+  # role_arn: "arn:aws:iam::123456789012:role/my-role"
 
-# Tool Configuration
 tools:
-  # List of allowed tools. Remove any you don't want the agent to use.
   allowed:
-    - fs_read      # Read files
-    - fs_write     # Write files (CAUTION: can modify filesystem)
-    - fs_list      # List directory contents
-    - grep         # Search file contents
-    - find         # Find files by name
-    - rg           # Ripgrep - fast search
-    - execute_bash # Execute shell commands (CAUTION: security risk)
-  
-  # Tool-specific permissions (optional)
-  permissions:
-    execute_bash:
-      # Options: allow, ask, deny
-      permission: ask
-      constraint: "Only allow safe read-only commands"
-    fs_write:
-      permission: ask
-      constraint: "Confirm before writing files"
-  
-  # File operation constraints
-  max_file_size: 10485760  # 10MB max file size for read/write
+    - fs_read
+    - fs_write
+    - fs_list
+    - grep
+    - find
+    - rg
+    - execute_bash
+  permissions: {}
+  max_file_size: 10485760  # 10MB
   allowed_extensions:
     - .txt
     - .md
@@ -71,18 +45,14 @@ tools:
     - .h
     - .hpp
 
-# Cache Configuration
 cache:
-  max_size: 100        # Maximum number of cached responses
-  ttl_seconds: 3600    # Cache time-to-live in seconds
+  max_size: 100
+  ttl_seconds: 3600
 
-# Rate Limiting
 rate_limit:
   max_requests_per_minute: 60
   max_tokens_per_minute: 100000
 
-# Pricing Configuration (for cost tracking)
-# Update these based on current AWS Bedrock pricing
 pricing:
   "us.anthropic.claude-3-5-sonnet-20241022-v2:0":
     input_per_1k: 0.003
@@ -97,160 +67,46 @@ pricing:
     output_per_1k: 0.075
     currency: "USD"
 
-# Operation Limits
 limits:
   max_conversation_turns: 20
   max_input_length: 100000
   max_output_length: 10000
   max_concurrent_tasks: 10
   max_queue_size: 100
-  # Uncomment to set a budget limit
-  # budget_limit: 100.0  # Stop operations after spending this amount
-  # alert_threshold: 0.8  # Alert when 80% of budget is used
 
-# Path Configuration
 paths:
   home_dir: "${HOME}/.bedrock-agent"
   workspace_dir: "${WORKSPACE_DIR:-./workspace}"
   cache_dir: "${HOME}/.bedrock-agent/cache"
   logs_dir: "${HOME}/.bedrock-agent/logs"
 
-# MCP (Model Context Protocol) Configuration
-# MCP allows integration with external tool servers
+# MCP (Model Context Protocol) configuration
 mcp:
-  enabled: false  # Set to true to enable MCP integration
-  max_tools: 64   # AWS Bedrock limit for most models
-  
-  # Load MCP server configurations from external files
+  enabled: true
+  max_tools: 100
   config_files: []
-  # Example:
-  # config_files:
-  #   - "${HOME}/.bedrock-agent/mcp-servers.yaml"
-  #   - "./mcp-config.yaml"
-  
-  # List of server names to start automatically
-  servers: []
-  # Example:
-  # servers:
-  #   - "github-mcp"
-  #   - "slack-mcp"
-  
-  # Inline MCP server configurations
+  servers: []  # Server names to start automatically
   inline_servers:
-    # Example: GitHub MCP Server (stdio transport)
-    # Uncomment and configure to enable
-    # github-mcp:
+    # Example Redux API Server (SSE transport)
+    # Uncomment and configure with your actual token
+    # redux-api:
+    #   type: "sse"
+    #   url: "http://localhost:8080"
+    #   headers:
+    #     token: "${REDUX_API_TOKEN:-your-token-here}"
+    #   timeout: 30000
+    
+    # Example Figma Developer MCP Server (stdio transport)
+    # Uncomment and configure with your actual API key
+    # figma-mcp:
+    #   type: "stdio"
     #   command: "npx"
     #   args:
     #     - "-y"
-    #     - "@modelcontextprotocol/server-github"
+    #     - "figma-developer-mcp"
     #     - "--stdio"
     #   env:
-    #     # IMPORTANT: Never commit real tokens!
-    #     # Use environment variables or secret management
-    #     GITHUB_TOKEN: "${GITHUB_TOKEN}"
-    #   timeout: 30000
+    #     FIGMA_API_KEY: "${FIGMA_API_KEY:-your-api-key-here}"
+    #   timeout: 60000
     #   disabled: false
-    #   health_check:
-    #     interval: 60      # Health check every 60 seconds
-    #     timeout: 5        # Health check timeout in seconds
-    #     max_failures: 3   # Restart after 3 consecutive failures
-    #   restart_policy:
-    #     max_retries: 3
-    #     initial_delay: 1  # Initial retry delay in seconds
-    #     max_delay: 30     # Maximum retry delay in seconds
-    #     backoff: exponential  # Options: linear, exponential, fixed
-    
-    # Example: Custom API Server (SSE transport)
-    # Uncomment and configure to enable
-    # custom-api:
-    #   type: "sse"
-    #   url: "${API_SERVER_URL:-http://localhost:8080}"
-    #   headers:
-    #     # IMPORTANT: Use environment variables for sensitive headers
-    #     Authorization: "Bearer ${API_TOKEN}"
-    #     X-API-Key: "${API_KEY}"
-    #   timeout: 30000
-    #   disabled: false
-
-# Security Configuration (recommended for production)
-security:
-  # Enable audit logging for all tool executions
-  audit_logging: true
-  
-  # Command execution whitelist (if execute_bash is enabled)
-  allowed_commands:
-    - "ls"
-    - "cat"
-    - "grep"
-    - "find"
-    - "echo"
-    - "pwd"
-    - "date"
-    # Add other safe commands as needed
-  
-  # Blocked patterns in commands (regex)
-  blocked_patterns:
-    - "rm -rf"
-    - "sudo"
-    - "chmod 777"
-    - "curl.*eval"
-    - "wget.*sh"
-    # Add other dangerous patterns
-  
-  # Network restrictions for MCP servers
-  allowed_domains:
-    - "github.com"
-    - "api.github.com"
-    - "localhost"
-    # Add other trusted domains
-  
-  # Enable secret scanning in outputs
-  scan_secrets: true
-  
-  # Redact sensitive information in logs
-  redact_patterns:
-    - "(?i)(api[_-]?key|token|secret|password)\\s*[:=]\\s*['\"]?([^'\"\\s]+)"
-
-# Observability Configuration (for production monitoring)
-observability:
-  # OpenTelemetry configuration
-  otel:
-    enabled: false
-    endpoint: "${OTEL_ENDPOINT:-http://localhost:4317}"
-    service_name: "bedrock-cli-agent"
-    
-  # Metrics collection
-  metrics:
-    enabled: true
-    export_interval: 60  # Export metrics every 60 seconds
-    
-  # Distributed tracing
-  tracing:
-    enabled: false
-    sampling_rate: 0.1  # Sample 10% of requests
-    
-  # Log levels: trace, debug, info, warn, error
-  log_level: "${LOG_LEVEL:-info}"
-
-# Production deployment settings
-deployment:
-  # Health check endpoint configuration
-  health_check:
-    enabled: true
-    port: 8080
-    path: "/health"
-    
-  # Graceful shutdown
-  shutdown_timeout: 30  # Wait up to 30 seconds for tasks to complete
-  
-  # Resource limits (optional, for containerized deployments)
-  resources:
-    max_memory: "2Gi"
-    max_cpu: "1000m"
-    
-  # High availability settings
-  ha:
-    enabled: false
-    replicas: 3
-    session_affinity: true
+EOF < /dev/null
