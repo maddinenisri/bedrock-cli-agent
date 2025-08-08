@@ -11,7 +11,7 @@ use bedrock_core::{BedrockError, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 pub mod ui;
 mod streaming;
@@ -133,7 +133,16 @@ impl BedrockClient {
         }
 
         let response = converse_request.send().await
-            .map_err(|e| BedrockError::Unknown(format!("Bedrock API error: {e}")))?;
+            .map_err(|e| {
+                // Extract more detailed error information
+                let error_msg = if let Some(service_error) = e.as_service_error() {
+                    format!("Bedrock API error: {:?} - {}", service_error, e)
+                } else {
+                    format!("Bedrock API error: {}", e)
+                };
+                error!("Bedrock converse failed: {}", error_msg);
+                BedrockError::Unknown(error_msg)
+            })?;
 
         let message = response.output()
             .and_then(|output| output.as_message().ok())

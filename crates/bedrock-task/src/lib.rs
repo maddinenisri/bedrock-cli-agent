@@ -178,7 +178,19 @@ impl TaskExecutor {
         let all_tools = self.tool_registry.get_all();
         debug!("Building tool definitions for {} tools", all_tools.len());
         
-        let tool_definitions: Vec<ToolDefinition> = all_tools
+        // Limit tools to max_tools setting from config (default 64, Bedrock limit)
+        let max_tools = self.config.mcp.max_tools;
+        let tools_to_use = if all_tools.len() > max_tools {
+            warn!(
+                "Tool count ({}) exceeds max_tools limit ({}). Limiting to first {} tools.",
+                all_tools.len(), max_tools, max_tools
+            );
+            all_tools.into_iter().take(max_tools).collect()
+        } else {
+            all_tools
+        };
+        
+        let tool_definitions: Vec<ToolDefinition> = tools_to_use
             .into_iter()
             .map(|tool| {
                 debug!("Processing tool: {}", tool.name());
@@ -195,7 +207,10 @@ impl TaskExecutor {
             })
             .collect();
         
-        debug!("Built {} tool definitions", tool_definitions.len());
+        debug!("Built {} tool definitions (limited from {} total)", 
+            tool_definitions.len(), 
+            self.tool_registry.list().len()
+        );
 
         // Initialize conversation with user prompt
         let user_message = Message::builder()
