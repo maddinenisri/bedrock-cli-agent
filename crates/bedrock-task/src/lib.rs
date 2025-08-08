@@ -218,12 +218,23 @@ impl TaskExecutor {
             self.tool_registry.list().len()
         );
 
+        // Initialize conversation manager for this task
+        let mut conv_manager = self.conversation_manager.lock().await;
+        let conversation_id = conv_manager.start_conversation(
+            self.config.agent.model.clone(),
+            if task.context.is_empty() { None } else { Some(task.context.clone()) },
+        )?;
+        debug!("Started conversation {} for task {}", conversation_id, task.task_id);
+
         // Initialize conversation with user prompt
         let user_message = Message::builder()
             .role(ConversationRole::User)
             .content(ContentBlock::Text(task.prompt.clone()))
             .build()
             .map_err(|e| BedrockError::Unknown(e.to_string()))?;
+
+        // Save user message to conversation
+        conv_manager.save_bedrock_message(&user_message, None)?;
 
         let mut conversation = vec![user_message];
         let mut total_tokens = TokenStatistics::default();
@@ -256,11 +267,23 @@ impl TaskExecutor {
                 .await?;
 
             // Update token statistics
+            let mut token_usage_stats = None;
             if let Some(usage) = &response.usage {
                 total_tokens.input_tokens += usage.input_tokens() as usize;
                 total_tokens.output_tokens += usage.output_tokens() as usize;
                 total_tokens.total_tokens += usage.total_tokens() as usize;
+                
+                // Create token usage stats for this response
+                token_usage_stats = Some(TokenUsageStats {
+                    input_tokens: usage.input_tokens() as u32,
+                    output_tokens: usage.output_tokens() as u32,
+                    total_tokens: usage.total_tokens() as u32,
+                    total_cost: None, // Will be calculated at the end
+                });
             }
+
+            // Save assistant response to conversation
+            conv_manager.save_bedrock_message(&response.message, token_usage_stats)?;
 
             // Add assistant response to conversation
             conversation.push(response.message.clone());
@@ -292,6 +315,9 @@ impl TaskExecutor {
                         ))
                         .build()
                         .map_err(|e| BedrockError::Unknown(e.to_string()))?;
+                    
+                    // Save tool result message to conversation
+                    conv_manager.save_bedrock_message(&tool_result_message, None)?;
                     
                     conversation.push(tool_result_message);
                     
@@ -355,12 +381,23 @@ impl TaskExecutor {
     ) -> Result<TaskResult> {
         info!("Executing task without tools");
 
+        // Initialize conversation manager for this task
+        let mut conv_manager = self.conversation_manager.lock().await;
+        let conversation_id = conv_manager.start_conversation(
+            self.config.agent.model.clone(),
+            if task.context.is_empty() { None } else { Some(task.context.clone()) },
+        )?;
+        debug!("Started conversation {} for task {}", conversation_id, task.task_id);
+
         // Initialize conversation with user prompt
         let user_message = Message::builder()
             .role(ConversationRole::User)
             .content(ContentBlock::Text(task.prompt.clone()))
             .build()
             .map_err(|e| BedrockError::Unknown(e.to_string()))?;
+
+        // Save user message to conversation
+        conv_manager.save_bedrock_message(&user_message, None)?;
 
         let conversation = vec![user_message];
 
@@ -380,13 +417,31 @@ impl TaskExecutor {
 
         // Calculate token statistics
         let mut total_tokens = TokenStatistics::default();
+        let mut token_usage_stats = None;
         if let Some(usage) = &response.usage {
             total_tokens.input_tokens = usage.input_tokens() as usize;
             total_tokens.output_tokens = usage.output_tokens() as usize;
             total_tokens.total_tokens = usage.total_tokens() as usize;
+            
+            // Create token usage stats for conversation
+            token_usage_stats = Some(TokenUsageStats {
+                input_tokens: usage.input_tokens() as u32,
+                output_tokens: usage.output_tokens() as u32,
+                total_tokens: usage.total_tokens() as u32,
+                total_cost: None, // Will be calculated below
+            });
         }
 
         let cost = self.calculate_cost(&total_tokens);
+        
+        // Update token usage with cost if available
+        if let Some(ref mut stats) = token_usage_stats {
+            stats.total_cost = Some(cost.total_cost);
+        }
+        
+        // Save assistant response to conversation
+        conv_manager.save_bedrock_message(&response.message, token_usage_stats)?;
+        
         let text_content = response.get_text_content();
         let summary = if text_content.is_empty() {
             "Task completed".to_string()
@@ -507,35 +562,8 @@ impl TaskExecutor {
         
         conv_manager.save_task_results(tasks)?;
         
-        // Also save conversation messages if available
-        if let Some(conversation) = &result.conversation {
-            for msg_json in conversation {
-                // Convert JSON back to message entry format
-                if let Some(role) = msg_json.get("role").and_then(|r| r.as_str()) {
-                    let content = msg_json.get("content").unwrap_or(&Value::Null).clone();
-                    
-                    match role {
-                        "user" => {
-                            if let Some(text) = content.as_str() {
-                                conv_manager.add_user_message(text.to_string())?;
-                            }
-                        },
-                        "assistant" => {
-                            if let Some(text) = content.as_str() {
-                                let tokens = TokenUsageStats {
-                                    input_tokens: result.token_stats.input_tokens as u32,
-                                    output_tokens: result.token_stats.output_tokens as u32,
-                                    total_tokens: result.token_stats.total_tokens as u32,
-                                    total_cost: Some(result.cost.total_cost),
-                                };
-                                conv_manager.add_assistant_message(text.to_string(), Some(tokens))?;
-                            }
-                        },
-                        _ => {}
-                    }
-                }
-            }
-        }
+        // Note: Conversation messages are now saved during execution in execute_with_tools/execute_without_tools
+        // This section is kept for backward compatibility but shouldn't be needed anymore
         
         // Also save to workspace/results for backward compatibility
         let results_dir = self.config.paths.workspace_dir.join("results");

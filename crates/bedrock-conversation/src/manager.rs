@@ -1,4 +1,5 @@
 use aws_sdk_bedrockruntime::types::{ContentBlock, ConversationRole, Message};
+use aws_smithy_types::Document;
 use bedrock_core::{BedrockError, Result};
 use serde_json::Value;
 use tracing::{debug, info};
@@ -21,6 +22,39 @@ impl ConversationManager {
             storage,
             conversation_id: None,
         })
+    }
+    
+    /// Convert AWS Document to JSON Value for serialization
+    fn document_to_json(doc: &Document) -> Result<Value> {
+        match doc {
+            Document::Null => Ok(Value::Null),
+            Document::Bool(b) => Ok(Value::Bool(*b)),
+            Document::Number(n) => {
+                match n {
+                    aws_smithy_types::Number::PosInt(u) => Ok(Value::Number((*u).into())),
+                    aws_smithy_types::Number::NegInt(i) => Ok(Value::Number((*i).into())),
+                    aws_smithy_types::Number::Float(f) => {
+                        serde_json::Number::from_f64(*f)
+                            .map(Value::Number)
+                            .ok_or_else(|| BedrockError::Unknown("Invalid float value".into()))
+                    }
+                }
+            }
+            Document::String(s) => Ok(Value::String(s.clone())),
+            Document::Array(arr) => {
+                let values: Result<Vec<Value>> = arr.iter()
+                    .map(Self::document_to_json)
+                    .collect();
+                Ok(Value::Array(values?))
+            }
+            Document::Object(obj) => {
+                let mut map = serde_json::Map::new();
+                for (k, v) in obj {
+                    map.insert(k.clone(), Self::document_to_json(v)?);
+                }
+                Ok(Value::Object(map))
+            }
+        }
     }
     
     /// Start a new conversation
@@ -124,8 +158,8 @@ impl ConversationManager {
         Ok(())
     }
     
-    /// Save a Bedrock Message to the conversation
-    pub fn save_bedrock_message(&self, message: &Message) -> Result<()> {
+    /// Save a Bedrock Message to the conversation with optional token usage
+    pub fn save_bedrock_message(&self, message: &Message, tokens: Option<TokenUsageStats>) -> Result<()> {
         let conversation_id = self.conversation_id
             .ok_or_else(|| BedrockError::TaskError("No active conversation".to_string()))?;
         
@@ -135,7 +169,7 @@ impl ConversationManager {
             _ => "system",
         }.to_string();
         
-        // Convert content blocks to JSON
+        // Convert content blocks to JSON, properly handling all types
         let content = if !message.content().is_empty() {
             let content_json: Vec<Value> = message.content().iter().map(|block| {
                 match block {
@@ -146,19 +180,36 @@ impl ConversationManager {
                         })
                     },
                     ContentBlock::ToolUse(tool_use) => {
+                        // Convert the Document input to proper JSON
+                        let input_json = Self::document_to_json(tool_use.input())
+                            .unwrap_or_else(|_| serde_json::json!({}));
+                        
                         serde_json::json!({
                             "type": "tool_use",
                             "tool_use_id": tool_use.tool_use_id(),
                             "name": tool_use.name(),
-                            "input": "tool_input"  // Simplified for now
+                            "input": input_json
                         })
                     },
                     ContentBlock::ToolResult(tool_result) => {
+                        // Get the actual content from tool result
+                        let result_content = tool_result.content()
+                            .iter()
+                            .filter_map(|c| {
+                                if let Ok(text) = c.as_text() {
+                                    Some(text.to_string())
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        
                         serde_json::json!({
                             "type": "tool_result",
                             "tool_use_id": tool_result.tool_use_id(),
                             "status": format!("{:?}", tool_result.status()),
-                            "content": "tool_result"  // Simplified for now
+                            "content": result_content
                         })
                     },
                     _ => serde_json::json!({
@@ -171,21 +222,47 @@ impl ConversationManager {
             serde_json::Value::Null
         };
         
-        let entry = MessageEntry {
+        let mut entry = MessageEntry {
             timestamp: chrono::Utc::now(),
             role,
             content,
             tool_name: None,
             tool_use_id: None,
-            tokens: None,
+            tokens: tokens.clone(),
         };
+        
+        // For tool messages, extract the tool name and ID
+        if message.role() == &ConversationRole::Assistant {
+            // Check if this message contains tool use
+            for block in message.content() {
+                if let Ok(tool_use) = block.as_tool_use() {
+                    entry.tool_name = Some(tool_use.name().to_string());
+                    entry.tool_use_id = Some(tool_use.tool_use_id().to_string());
+                    break; // Just get the first tool for metadata
+                }
+            }
+        }
         
         self.storage.append_message(&conversation_id, &entry)?;
         
-        // Update metadata
+        // Update metadata including token usage
         let mut metadata = self.storage.load_metadata(&conversation_id)?;
         metadata.message_count += 1;
         metadata.updated_at = chrono::Utc::now();
+        
+        // Update token usage if provided
+        if let Some(tokens) = tokens {
+            metadata.token_usage.input_tokens += tokens.input_tokens;
+            metadata.token_usage.output_tokens += tokens.output_tokens;
+            metadata.token_usage.total_tokens += tokens.total_tokens;
+            
+            if let Some(cost) = tokens.total_cost {
+                metadata.token_usage.total_cost = Some(
+                    metadata.token_usage.total_cost.unwrap_or(0.0) + cost
+                );
+            }
+        }
+        
         self.storage.save_metadata(&metadata)?;
         
         Ok(())
@@ -234,5 +311,15 @@ impl ConversationManager {
     /// Get the current conversation ID
     pub fn current_conversation_id(&self) -> Option<Uuid> {
         self.conversation_id
+    }
+    
+    /// Get the current message count
+    pub fn get_message_count(&self) -> usize {
+        if let Some(conversation_id) = self.conversation_id {
+            if let Ok(metadata) = self.storage.load_metadata(&conversation_id) {
+                return metadata.message_count;
+            }
+        }
+        0
     }
 }
