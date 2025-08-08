@@ -110,6 +110,8 @@ pub struct McpSettings {
     pub servers: Vec<String>,
     #[serde(default)]
     pub inline_servers: HashMap<String, serde_json::Value>,
+    #[serde(default = "default_max_tools")]
+    pub max_tools: usize,
 }
 
 impl Default for McpSettings {
@@ -119,6 +121,7 @@ impl Default for McpSettings {
             config_files: vec![],
             servers: vec![],
             inline_servers: HashMap::new(),
+            max_tools: default_max_tools(),
         }
     }
 }
@@ -262,6 +265,7 @@ fn default_currency() -> String { "USD".to_string() }
 fn default_max_tpm() -> usize { 100_000 }
 fn default_max_rpm() -> usize { 100 }
 fn default_alert_threshold() -> f64 { 0.8 }
+fn default_max_tools() -> usize { 64 }  // AWS Bedrock limit for most models
 
 fn default_home_dir() -> PathBuf {
     std::env::var("HOME_DIR")

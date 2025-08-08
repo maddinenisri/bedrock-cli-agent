@@ -9,6 +9,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, error};
 
 use crate::client::McpClient;
+use crate::conversions::process_mcp_response;
 use crate::types::{ContentItem, McpTool};
 
 /// Wrapper for MCP tools to implement our Tool trait
@@ -66,13 +67,6 @@ impl Tool for McpToolWrapper {
         let mut client = self.client.write().await;
         match client.call_tool(&self.tool_def.name, args).await {
             Ok(content_items) => {
-                // Convert MCP result to JSON response
-                let mut response = json!({
-                    "success": true,
-                    "server": self.server_name,
-                    "tool": self.tool_def.name
-                });
-                
                 // Process content items
                 let mut text_content = Vec::new();
                 let mut images = Vec::new();
@@ -92,22 +86,16 @@ impl Tool for McpToolWrapper {
                     }
                 }
                 
-                // Build response based on content
-                if text_content.len() == 1 && images.is_empty() {
-                    // Single text response - return as simple string for compatibility
-                    Ok(json!(text_content[0]))
-                } else {
-                    // Multiple content items - return structured response
-                    if !text_content.is_empty() {
-                        response["content"] = json!(text_content.join("\n"));
-                    }
-                    
-                    if !images.is_empty() {
-                        response["images"] = json!(images);
-                    }
-                    
-                    Ok(response)
+                // Use the centralized response processing
+                let mut response = process_mcp_response(text_content, images);
+                
+                // Add metadata for debugging
+                if let Value::Object(ref mut map) = response {
+                    map.insert("server".to_string(), json!(self.server_name));
+                    map.insert("tool".to_string(), json!(self.tool_def.name));
                 }
+                
+                Ok(response)
             }
             Err(e) => {
                 error!("MCP tool execution failed: {}", e);

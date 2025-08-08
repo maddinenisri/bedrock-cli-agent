@@ -2,12 +2,11 @@
 
 use bedrock_core::{BedrockError, Result};
 use serde_json::Value;
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use tokio::sync::{Mutex, RwLock, oneshot};
-use tokio::task::JoinHandle;
-use tracing::{debug, info, error};
+use tokio::sync::RwLock;
+use tokio::time::{timeout, Duration};
+use tracing::{debug, info, warn};
 
 use crate::config::McpServerConfig;
 use crate::transport::Transport;
@@ -22,20 +21,20 @@ pub struct McpClient {
     /// Server name for identification
     name: String,
     
-    /// Transport for communication (shared with response handler)
+    /// Transport for communication
     transport: Arc<RwLock<Box<dyn Transport>>>,
     
     /// Request ID counter
     request_id: Arc<AtomicU64>,
     
-    /// Pending requests waiting for responses
-    pending_requests: Arc<Mutex<HashMap<String, oneshot::Sender<JsonRpcResponse>>>>,
-    
-    /// Response handler task
-    response_handler: Option<JoinHandle<()>>,
-    
     /// Server capabilities (set after initialization)
     capabilities: Option<InitializeResult>,
+    
+    /// Cached tools from the server
+    tools_cache: Vec<McpTool>,
+    
+    /// Timeout duration for requests (in milliseconds)
+    timeout_ms: u64,
 }
 
 impl McpClient {
@@ -45,56 +44,19 @@ impl McpClient {
         let transport = transport_config.create_transport().await?;
         let transport = Arc::new(RwLock::new(transport));
         
-        let pending_requests: Arc<Mutex<HashMap<String, oneshot::Sender<JsonRpcResponse>>>> = 
-            Arc::new(Mutex::new(HashMap::new()));
-        
-        // Start response handler task with shared transport
-        let pending_clone = pending_requests.clone();
-        let transport_clone = transport.clone();
-        
-        let response_handler = tokio::spawn(async move {
-            loop {
-                // Try to receive a response (release lock quickly)
-                let response = {
-                    let mut transport = transport_clone.write().await;
-                    let resp = transport.receive_response().await;
-                    drop(transport); // Explicitly drop lock
-                    resp
-                };
-                
-                match response {
-                    Ok(Some(response)) => {
-                        debug!("Received response with id: {}", response.id);
-                        
-                        let mut pending = pending_clone.lock().await;
-                        if let Some(sender) = pending.remove(&response.id) {
-                            if sender.send(response).is_err() {
-                                debug!("Failed to send response to waiting request");
-                            }
-                        } else {
-                            debug!("No pending request for response id: {}", response.id);
-                        }
-                    }
-                    Ok(None) => {
-                        // No response available, wait a bit
-                        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-                    }
-                    Err(e) => {
-                        error!("Error receiving response: {}", e);
-                        // Don't break on error, just log and continue
-                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                    }
-                }
-            }
-        });
+        // Extract timeout from config
+        let timeout_ms = match &config {
+            McpServerConfig::Stdio { timeout, .. } => *timeout,
+            McpServerConfig::Sse { timeout, .. } => *timeout,
+        };
         
         Ok(Self {
             name,
             transport,
             request_id: Arc::new(AtomicU64::new(1)),
-            pending_requests,
-            response_handler: Some(response_handler),
             capabilities: None,
+            tools_cache: Vec::new(),
+            timeout_ms,
         })
     }
     
@@ -173,6 +135,11 @@ impl McpClient {
         Ok(result)
     }
     
+    /// Get cached tools (populated during initialization)
+    pub async fn get_tools(&self) -> Vec<McpTool> {
+        self.tools_cache.clone()
+    }
+    
     /// List available tools from the MCP server
     pub async fn list_tools(&mut self) -> Result<Vec<McpTool>> {
         debug!("Listing tools from MCP server: {}", self.name);
@@ -203,6 +170,9 @@ impl McpClient {
             result.tools.len(),
             self.name
         );
+        
+        // Cache the tools
+        self.tools_cache = result.tools.clone();
         
         Ok(result.tools)
     }
@@ -247,16 +217,9 @@ impl McpClient {
         Ok(result.content)
     }
     
-    /// Send a request and wait for response
+    /// Send a request and wait for response with direct correlation
     async fn send_request(&mut self, request: JsonRpcRequest) -> Result<JsonRpcResponse> {
-        let (tx, rx) = oneshot::channel();
         let request_id = request.id.clone();
-        
-        // Register pending request
-        {
-            let mut pending = self.pending_requests.lock().await;
-            pending.insert(request_id.clone(), tx);
-        }
         
         // Send the request
         {
@@ -264,24 +227,43 @@ impl McpClient {
             transport.send_request(request).await?;
         }
         
-        // Wait for response with timeout
-        match tokio::time::timeout(
-            tokio::time::Duration::from_secs(30),
-            rx
-        ).await {
-            Ok(Ok(response)) => Ok(response),
-            Ok(Err(_)) => {
-                // Remove from pending if still there
-                let mut pending = self.pending_requests.lock().await;
-                pending.remove(&request_id);
-                Err(BedrockError::McpError("Request cancelled".into()))
+        // Wait for response with timeout and correlation
+        let timeout_duration = Duration::from_millis(self.timeout_ms);
+        
+        timeout(timeout_duration, self.wait_for_response(request_id.clone())).await
+            .map_err(|_| BedrockError::McpError(
+                format!("Request {} timed out after {}ms", request_id, self.timeout_ms)
+            ))?
+    }
+    
+    /// Wait for a specific response by ID
+    async fn wait_for_response(&mut self, request_id: String) -> Result<JsonRpcResponse> {
+        let start = std::time::Instant::now();
+        let max_wait = Duration::from_millis(self.timeout_ms);
+        
+        loop {
+            // Check for timeout
+            if start.elapsed() > max_wait {
+                return Err(BedrockError::McpError(
+                    format!("Timeout waiting for response to request {}", request_id)
+                ));
             }
-            Err(_) => {
-                // Remove from pending if still there
-                let mut pending = self.pending_requests.lock().await;
-                pending.remove(&request_id);
-                Err(BedrockError::McpError("Request timed out".into()))
+            
+            // Try to receive response
+            let mut transport = self.transport.write().await;
+            if let Some(response) = transport.receive_response().await? {
+                if response.id == request_id {
+                    return Ok(response);
+                }
+                // If not our response, log and continue
+                // This could happen if responses arrive out of order
+                warn!("Received response for different request: {} (expected: {})", 
+                      response.id, request_id);
             }
+            
+            // Release lock and wait briefly before retrying
+            drop(transport);
+            tokio::time::sleep(Duration::from_millis(10)).await;
         }
     }
     
@@ -295,11 +277,6 @@ impl McpClient {
     pub async fn close(&mut self) -> Result<()> {
         debug!("Closing MCP client: {}", self.name);
         
-        // Cancel response handler
-        if let Some(handler) = self.response_handler.take() {
-            handler.abort();
-        }
-        
         // Close transport
         let mut transport = self.transport.write().await;
         transport.close().await?;
@@ -310,9 +287,7 @@ impl McpClient {
 
 impl Drop for McpClient {
     fn drop(&mut self) {
-        // Cancel response handler if still running
-        if let Some(handler) = self.response_handler.take() {
-            handler.abort();
-        }
+        // Nothing to clean up with simplified design
+        debug!("Dropping MCP client: {}", self.name);
     }
 }
