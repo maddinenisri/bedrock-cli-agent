@@ -4,14 +4,16 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
+pub mod execute_bash;
 pub mod fs_tools;
 pub mod search_tools;
-pub mod execute_bash;
 pub mod security;
+pub mod todo_tool;
 
-pub use fs_tools::{FileReadTool, FileWriteTool, FileListTool};
-pub use search_tools::{GrepTool, FindTool, RipgrepTool};
 pub use execute_bash::ExecuteBashTool;
+pub use fs_tools::{FileListTool, FileReadTool, FileWriteTool};
+pub use search_tools::{FindTool, GrepTool, RipgrepTool};
+pub use todo_tool::TodoTool;
 
 #[async_trait]
 pub trait Tool: Send + Sync {
@@ -35,20 +37,22 @@ impl ToolRegistry {
     pub fn with_default_tools(workspace_dir: impl Into<std::path::PathBuf>) -> Self {
         let registry = Self::new();
         let workspace = workspace_dir.into();
-        
+
         // Register file system tools
         registry.register(FileReadTool::new(&workspace)).unwrap();
         registry.register(FileWriteTool::new(&workspace)).unwrap();
         registry.register(FileListTool::new(&workspace)).unwrap();
-        
+
         // Register search tools
         registry.register(GrepTool::new(&workspace)).unwrap();
         registry.register(FindTool::new(&workspace)).unwrap();
         registry.register(RipgrepTool::new(&workspace)).unwrap();
-        
+
         // Register execution tools
         registry.register(ExecuteBashTool::new(&workspace)).unwrap();
-        
+        // Register todo planning tool
+        registry.register(TodoTool::new()).unwrap();
+
         registry
     }
 
@@ -74,7 +78,7 @@ impl ToolRegistry {
         let tools = self.tools.read().unwrap();
         tools.keys().cloned().collect()
     }
-    
+
     pub fn get_all(&self) -> Vec<Arc<dyn Tool>> {
         let tools = self.tools.read().unwrap();
         tools.values().cloned().collect()
@@ -173,19 +177,19 @@ mod tests {
         registry.unregister("test_tool").unwrap();
         assert!(registry.get("test_tool").is_none());
     }
-    
+
     #[test]
     fn test_default_tools() {
         let registry = ToolRegistry::with_default_tools("/tmp");
         let tools = registry.list();
-        
+
         assert!(tools.contains(&"fs_read".to_string()));
         assert!(tools.contains(&"fs_write".to_string()));
         assert!(tools.contains(&"fs_list".to_string()));
         assert!(tools.contains(&"grep".to_string()));
         assert!(tools.contains(&"find".to_string()));
         assert!(tools.contains(&"rg".to_string()));
-        
+
         // Check for execute_bash/execute_cmd based on OS
         if cfg!(target_os = "windows") {
             assert!(tools.contains(&"execute_cmd".to_string()));

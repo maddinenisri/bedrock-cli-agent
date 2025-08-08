@@ -10,6 +10,7 @@ This documentation is organized to provide easy access to all project informatio
 - 📊 [Project Status](status/EPIC_STATUS.md)
 - ⚠️ [Known Issues](implementation/mcp/known-issues.md)
 - 🔧 [Configuration Guide](guides/configuration.md)
+- ✅ [Todo Planning](guides/todo-planning.md)
 
 ## Documentation Categories
 

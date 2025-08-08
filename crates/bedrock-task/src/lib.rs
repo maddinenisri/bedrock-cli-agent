@@ -1,11 +1,8 @@
-use aws_sdk_bedrockruntime::types::{
-    ContentBlock, ConversationRole, Message,
-};
+use aws_sdk_bedrockruntime::types::{ContentBlock, ConversationRole, Message};
 use bedrock_client::{BedrockClient, ToolDefinition};
 use bedrock_config::AgentConfig;
 use bedrock_core::{
-    BedrockError, CostDetails, Result, Task, TaskResult, TaskStatus,
-    TokenStatistics,
+    BedrockError, CostDetails, Result, Task, TaskResult, TaskStatus, TodoStatus, TokenStatistics,
 };
 use bedrock_tools::ToolRegistry;
 use chrono::Utc;
@@ -17,6 +14,9 @@ use tokio::sync::Mutex;
 use tokio::time::timeout;
 use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
+
+mod todo;
+use todo::TodoPlanner;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Priority {
@@ -136,8 +136,8 @@ impl TaskExecutor {
         }
 
         let task_timeout = Duration::from_secs(300); // 5 minute default timeout
-        
-        match timeout(task_timeout, self.execute_internal(task.clone())).await {
+
+        match timeout(task_timeout, self.execute_sequence(task.clone())).await {
             Ok(result) => result,
             Err(_) => {
                 error!("Task {} timed out after 300 seconds", task.task_id);
@@ -151,14 +151,57 @@ impl TaskExecutor {
                     started_at: Utc::now(),
                     completed_at: Some(Utc::now()),
                     error: Some("Task timed out after 300 seconds".to_string()),
+                    todos: task.todos,
                 })
             }
         }
     }
 
+    async fn execute_sequence(&self, mut task: Task) -> Result<TaskResult> {
+        let started_at = Utc::now();
+        if task.todos.is_empty() {
+            let planner = TodoPlanner::new();
+            task.todos = planner.plan(&task).await;
+        }
+
+        let mut conversation: Vec<serde_json::Value> = Vec::new();
+        let mut total_tokens = TokenStatistics::default();
+        let mut summary = String::new();
+
+        for todo in task.todos.iter_mut() {
+            todo.status = TodoStatus::InProgress;
+            let sub_task = Task::new(todo.description.clone()).with_context(task.context.clone());
+            let result = self.execute_internal(sub_task).await?;
+            conversation.extend(result.conversation.clone());
+            total_tokens.input_tokens += result.token_stats.input_tokens;
+            total_tokens.output_tokens += result.token_stats.output_tokens;
+            total_tokens.total_tokens += result.token_stats.total_tokens;
+            summary = result.summary.clone();
+            todo.status = TodoStatus::Completed;
+        }
+
+        let cost = self.calculate_cost(&total_tokens);
+        Ok(TaskResult {
+            task_id: task.task_id,
+            status: TaskStatus::Completed,
+            summary: if summary.is_empty() {
+                "Task completed".to_string()
+            } else {
+                summary
+            },
+            conversation,
+            token_stats: total_tokens,
+            cost,
+            started_at,
+            completed_at: Some(Utc::now()),
+            error: None,
+            todos: task.todos,
+        })
+    }
+
     async fn execute_internal(&self, task: Task) -> Result<TaskResult> {
         let started_at = Utc::now();
-        
+
         if !self.tool_registry.list().is_empty() {
             self.execute_with_tools(task, started_at).await
         } else {
@@ -172,31 +215,37 @@ impl TaskExecutor {
         task: Task,
         started_at: chrono::DateTime<chrono::Utc>,
     ) -> Result<TaskResult> {
-        info!("Starting task execution with {} tools", self.tool_registry.list().len());
+        info!(
+            "Starting task execution with {} tools",
+            self.tool_registry.list().len()
+        );
 
         // Build tool definitions
         let all_tools = self.tool_registry.get_all();
         debug!("Building tool definitions for {} tools", all_tools.len());
-        
+
         // Limit tools to max_tools setting from config (default 64, Bedrock limit)
         let max_tools = self.config.mcp.max_tools;
         let tools_to_use = if all_tools.len() > max_tools {
             warn!(
                 "Tool count ({}) exceeds max_tools limit ({}). Limiting to first {} tools.",
-                all_tools.len(), max_tools, max_tools
+                all_tools.len(),
+                max_tools,
+                max_tools
             );
             all_tools.into_iter().take(max_tools).collect()
         } else {
             all_tools
         };
-        
+
         let tool_definitions: Vec<ToolDefinition> = tools_to_use
             .into_iter()
             .map(|tool| {
                 debug!("Processing tool: {}", tool.name());
                 let schema = tool.schema();
-                debug!("Got schema for tool: {}, size: {} bytes", 
-                    tool.name(), 
+                debug!(
+                    "Got schema for tool: {}, size: {} bytes",
+                    tool.name(),
                     serde_json::to_string(&schema).unwrap_or_default().len()
                 );
                 ToolDefinition {
@@ -206,9 +255,10 @@ impl TaskExecutor {
                 }
             })
             .collect();
-        
-        debug!("Built {} tool definitions (limited from {} total)", 
-            tool_definitions.len(), 
+
+        debug!(
+            "Built {} tool definitions (limited from {} total)",
+            tool_definitions.len(),
             self.tool_registry.list().len()
         );
 
@@ -232,7 +282,8 @@ impl TaskExecutor {
             }
 
             // Call the model
-            let response = self.bedrock_client
+            let response = self
+                .bedrock_client
                 .converse(
                     &self.config.agent.model,
                     conversation.clone(),
@@ -260,21 +311,25 @@ impl TaskExecutor {
             conversation.push(response.message.clone());
 
             // Check if we need to handle tool calls
-            debug!("Response stop_reason: {:?}, has_tool_use: {}", 
-                response.stop_reason, response.has_tool_use());
-            
+            debug!(
+                "Response stop_reason: {:?}, has_tool_use: {}",
+                response.stop_reason,
+                response.has_tool_use()
+            );
+
             if response.has_tool_use() {
                 // Get tool uses from the response
                 let tool_uses = response.get_tool_uses();
-                
+
                 if !tool_uses.is_empty() {
                     debug!("Processing {} tool calls", tool_uses.len());
-                    
+
                     // Execute tools and get results
-                    let tool_results = self.bedrock_client
+                    let tool_results = self
+                        .bedrock_client
                         .execute_tools(&tool_uses, &self.tool_registry)
                         .await?;
-                    
+
                     // Create a message with tool results
                     let tool_result_message = Message::builder()
                         .role(ConversationRole::User)
@@ -286,9 +341,9 @@ impl TaskExecutor {
                         ))
                         .build()
                         .map_err(|e| BedrockError::Unknown(e.to_string()))?;
-                    
+
                     conversation.push(tool_result_message);
-                    
+
                     // Continue conversation with tool results
                     continue;
                 }
@@ -316,13 +371,14 @@ impl TaskExecutor {
                 started_at,
                 completed_at: Some(Utc::now()),
                 error: None,
+                todos: Vec::new(),
             });
         }
 
         // Max iterations reached
         let cost = self.calculate_cost(&total_tokens);
         let conversation_json = self.messages_to_json(&conversation)?;
-        
+
         Ok(TaskResult {
             task_id: task.task_id,
             status: TaskStatus::Failed,
@@ -333,6 +389,7 @@ impl TaskExecutor {
             started_at,
             completed_at: Some(Utc::now()),
             error: Some("Max tool iterations reached".to_string()),
+            todos: Vec::new(),
         })
     }
 
@@ -353,7 +410,8 @@ impl TaskExecutor {
         let conversation = vec![user_message];
 
         // Call the model
-        let response = self.bedrock_client
+        let response = self
+            .bedrock_client
             .converse(
                 &self.config.agent.model,
                 conversation.clone(),
@@ -385,7 +443,7 @@ impl TaskExecutor {
         // Build final conversation with response
         let mut final_conversation = conversation;
         final_conversation.push(response.message);
-        
+
         let conversation_json = self.messages_to_json(&final_conversation)?;
 
         Ok(TaskResult {
@@ -398,13 +456,14 @@ impl TaskExecutor {
             started_at,
             completed_at: Some(Utc::now()),
             error: None,
+            todos: Vec::new(),
         })
     }
 
     fn calculate_cost(&self, tokens: &TokenStatistics) -> CostDetails {
         // Get pricing for the model being used
         let pricing = self.config.pricing.get(&self.config.agent.model);
-        
+
         let (input_cost, output_cost, currency) = if let Some(pricing) = pricing {
             let input_cost = (tokens.input_tokens as f64 / 1000.0) * pricing.input_per_1k;
             let output_cost = (tokens.output_tokens as f64 / 1000.0) * pricing.output_per_1k;
@@ -415,7 +474,7 @@ impl TaskExecutor {
             let output_cost = (tokens.output_tokens as f64 / 1000.0) * 0.015;
             (input_cost, output_cost, "USD".to_string())
         };
-        
+
         CostDetails {
             input_cost,
             output_cost,
@@ -437,10 +496,11 @@ impl TaskExecutor {
     // Convert AWS SDK Messages to JSON for storage
     fn messages_to_json(&self, messages: &[Message]) -> Result<Vec<Value>> {
         let mut json_messages = Vec::new();
-        
+
         for msg in messages {
             let role = format!("{:?}", msg.role());
-            let content = msg.content()
+            let content = msg
+                .content()
                 .iter()
                 .filter_map(|block| {
                     if let Ok(text) = block.as_text() {
@@ -455,14 +515,14 @@ impl TaskExecutor {
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
-            
+
             json_messages.push(serde_json::json!({
                 "role": role,
                 "content": content,
                 "timestamp": Utc::now().to_rfc3339()
             }));
         }
-        
+
         Ok(json_messages)
     }
 
@@ -470,15 +530,13 @@ impl TaskExecutor {
         // Use a default results directory if not in config
         let results_dir = self.config.paths.workspace_dir.join("results");
         if !results_dir.exists() {
-            std::fs::create_dir_all(&results_dir)
-                .map_err(BedrockError::IoError)?;
+            std::fs::create_dir_all(&results_dir).map_err(BedrockError::IoError)?;
         }
 
         let file_path = results_dir.join(format!("{}.json", result.task_id));
         let json = serde_json::to_string_pretty(result)?;
-        std::fs::write(file_path, json)
-            .map_err(BedrockError::IoError)?;
-        
+        std::fs::write(file_path, json).map_err(BedrockError::IoError)?;
+
         debug!("Task result saved: {}", result.task_id);
         Ok(())
     }
@@ -486,10 +544,9 @@ impl TaskExecutor {
     pub async fn load_result(&self, task_id: &Uuid) -> Result<TaskResult> {
         let results_dir = self.config.paths.workspace_dir.join("results");
         let file_path = results_dir.join(format!("{task_id}.json"));
-        
-        let json = std::fs::read_to_string(file_path)
-            .map_err(BedrockError::IoError)?;
-        
+
+        let json = std::fs::read_to_string(file_path).map_err(BedrockError::IoError)?;
+
         let result: TaskResult = serde_json::from_str(&json)?;
         Ok(result)
     }

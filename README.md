@@ -16,6 +16,7 @@ A Rust-based AWS Bedrock LLM agent with built-in tools, caching, and MCP integra
 - ✅ Modular crate architecture
 - ✅ Metrics collection and monitoring
 - ✅ MCP tool integration (stdio/SSE) - Tested with FIGMA and JIRA tools
+- ✅ Todo-based planning with dynamic item tracking
 - 📋 Response caching (LRU) - planned
 - 📋 Rate limiting - planned
 
@@ -97,6 +98,12 @@ bedrock-agent tools
 ### Test AWS connectivity
 ```bash
 bedrock-agent test
+```
+
+### Todo planning and tracking
+```bash
+# Automatically break down a prompt into todos and execute sequentially
+bedrock-agent task --prompt "Plan release and update docs"
 ```
 
 ## Environment Variables

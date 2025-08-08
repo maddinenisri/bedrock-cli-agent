@@ -1,13 +1,40 @@
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use uuid::Uuid;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TodoStatus {
+    Pending,
+    InProgress,
+    Completed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TodoItem {
+    pub id: Uuid,
+    pub description: String,
+    pub status: TodoStatus,
+    pub created_at: DateTime<Utc>,
+}
+
+impl TodoItem {
+    pub fn new(description: impl Into<String>) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            description: description.into(),
+            status: TodoStatus::Pending,
+            created_at: Utc::now(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
     pub task_id: Uuid,
     pub context: String,
     pub prompt: String,
+    pub todos: Vec<TodoItem>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -17,6 +44,7 @@ impl Task {
             task_id: Uuid::new_v4(),
             context: String::new(),
             prompt: prompt.into(),
+            todos: Vec::new(),
             created_at: Utc::now(),
         }
     }
@@ -39,6 +67,7 @@ pub struct TaskResult {
     pub started_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
     pub error: Option<String>,
+    pub todos: Vec<TodoItem>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,28 +123,28 @@ impl Default for CostDetails {
 pub enum BedrockError {
     #[error("AWS authentication failed: {0}")]
     AuthError(String),
-    
+
     #[error("Rate limit exceeded: {0}")]
     RateLimitError(String),
-    
+
     #[error("Tool execution failed for '{tool}': {message}")]
     ToolError { tool: String, message: String },
-    
+
     #[error("Configuration error: {0}")]
     ConfigError(String),
-    
+
     #[error("Task execution failed: {0}")]
     TaskError(String),
-    
+
     #[error("MCP communication error: {0}")]
     McpError(String),
-    
+
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
-    
+
     #[error("Serialization error: {0}")]
     SerializationError(#[from] serde_json::Error),
-    
+
     #[error("Unknown error: {0}")]
     Unknown(String),
 }
