@@ -215,7 +215,7 @@ impl BedrockClient {
     fn build_tool_config(&self, tools: Vec<ToolDefinition>) -> Result<ToolConfiguration> {
         let mut tool_specs = Vec::new();
         
-        info!("🔧 Building tool config for {} tools", tools.len());
+        debug!("🔧 Building tool config for {} tools", tools.len());
         
         for tool in tools {
             debug!("Adding tool to Bedrock: {}", tool.name);
@@ -243,7 +243,7 @@ impl BedrockClient {
             tool_specs.push(Tool::ToolSpec(spec));
         }
         
-        info!("✅ Successfully built {} tool specifications", tool_specs.len());
+        debug!("Built {} tool specifications for API call", tool_specs.len());
         
         ToolConfiguration::builder()
             .set_tools(Some(tool_specs))
@@ -295,7 +295,7 @@ impl BedrockClient {
         }
     }
 
-    fn document_to_json(doc: &Document) -> Result<Value> {
+    pub fn document_to_json(doc: &Document) -> Result<Value> {
         match doc {
             Document::Null => Ok(Value::Null),
             Document::Bool(b) => Ok(Value::Bool(*b)),

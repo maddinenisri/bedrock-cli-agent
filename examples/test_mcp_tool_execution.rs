@@ -84,6 +84,7 @@ async fn main() -> Result<()> {
             model: "anthropic.claude-3-haiku-20240307-v1:0".to_string(),
             temperature: 0.3,
             max_tokens: 2000,
+            system_prompt: None,
         },
         aws: bedrock_config::AwsSettings {
             region: "us-east-1".to_string(),

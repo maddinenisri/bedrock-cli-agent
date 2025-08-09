@@ -61,7 +61,9 @@ mod tests {
         let images = vec![];
         
         let result = process_mcp_response(text, images);
-        assert_eq!(result, Value::String("Hello, world!".to_string()));
+        assert!(result.is_object());
+        assert_eq!(result["success"], Value::Bool(true));
+        assert_eq!(result["content"], Value::String("Hello, world!".to_string()));
     }
     
     #[test]

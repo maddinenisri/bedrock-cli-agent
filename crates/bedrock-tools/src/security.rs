@@ -71,8 +71,8 @@ static DANGEROUS_PATTERNS: Lazy<Vec<Regex>> = Lazy::new(|| {
         Regex::new(r"(?i)\bkill\s+-9\b").unwrap(),
         Regex::new(r"(?i)\bkillall\b").unwrap(),
         
-        // Fork bombs and resource exhaustion
-        Regex::new(r":\(\)\{.*:\|:&\}").unwrap(),
+        // Fork bombs and resource exhaustion  
+        Regex::new(r":\(\)\{.*:\|:&.*\};:").unwrap(),
         Regex::new(r"fork\s*\(\s*\)").unwrap(),
         
         // Reverse shells
@@ -217,14 +217,23 @@ impl CommandValidator {
             let base_cmd = cmd.split('/').last().unwrap_or(cmd);
             
             // Check if it's a known read-only command
-            matches!(
+            if matches!(
                 base_cmd,
                 "ls" | "cat" | "grep" | "find" | "echo" | "pwd" | "date" | 
                 "whoami" | "hostname" | "uname" | "which" | "wc" | "head" | 
-                "tail" | "sort" | "uniq" | "cut" | "awk" | "sed" | "tr" |
-                "git" if parts.get(1).map_or(false, |&arg| 
-                    matches!(arg, "status" | "log" | "diff" | "show" | "branch" | "remote"))
-            )
+                "tail" | "sort" | "uniq" | "cut" | "awk" | "sed" | "tr"
+            ) {
+                return true;
+            }
+            
+            // Special case for git with read-only subcommands
+            if base_cmd == "git" {
+                if let Some(&arg) = parts.get(1) {
+                    return matches!(arg, "status" | "log" | "diff" | "show" | "branch" | "remote");
+                }
+            }
+            
+            false
         } else {
             false
         }

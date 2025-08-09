@@ -180,7 +180,7 @@ impl TaskExecutor {
     ) -> Result<TaskResult> {
         info!("Starting task execution with {} tools", self.tool_registry.list().len());
 
-        // Build tool definitions
+        // Build tool definitions ONCE at the beginning
         let all_tools = self.tool_registry.get_all();
         debug!("Building tool definitions for {} tools", all_tools.len());
         
@@ -213,7 +213,8 @@ impl TaskExecutor {
             })
             .collect();
         
-        debug!("Built {} tool definitions (limited from {} total)", 
+        // Log this only once when tool definitions are built
+        info!("✅ Built {} tool definitions for task execution (limited from {} total)", 
             tool_definitions.len(), 
             self.tool_registry.list().len()
         );
@@ -516,9 +517,37 @@ impl TaskExecutor {
                     if let Ok(text) = block.as_text() {
                         Some(text.to_string())
                     } else if let Ok(tool_use) = block.as_tool_use() {
-                        Some(format!("[Tool: {}]", tool_use.name()))
-                    } else if let Ok(_tool_result) = block.as_tool_result() {
-                        Some("[Tool Result]".to_string())
+                        // Show tool details like Claude Code
+                        // Convert Document to JSON for display
+                        let tool_params = if let Ok(json_value) = bedrock_client::BedrockClient::document_to_json(tool_use.input()) {
+                            format!(" with {}", json_value)
+                        } else {
+                            String::new()
+                        };
+                        Some(format!("Using tool: {}{}", tool_use.name(), tool_params))
+                    } else if let Ok(tool_result) = block.as_tool_result() {
+                        // Show tool result details
+                        let content = tool_result.content();
+                        let content_str = content.iter()
+                            .filter_map(|c| {
+                                if let Ok(text) = c.as_text() {
+                                    Some(text.to_string())
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        
+                        // Truncate long results for display
+                        let result_preview = if content_str.len() > 200 {
+                            format!(": {}...", &content_str[..197])
+                        } else if !content_str.is_empty() {
+                            format!(": {}", content_str)
+                        } else {
+                            String::new()
+                        };
+                        Some(format!("Tool result{}", result_preview))
                     } else {
                         None
                     }

@@ -259,9 +259,35 @@ async fn execute_task(
         println!("\n💬 Conversation:");
         if let Some(conversation) = &result.conversation {
             for msg in conversation {
-                if let Some(role) = msg.get("role") {
-                    if let Some(content) = msg.get("content") {
-                        println!("[{role}]: {content}");
+                if let Some(role) = msg.get("role").and_then(|r| r.as_str()) {
+                    if let Some(content) = msg.get("content").and_then(|c| c.as_str()) {
+                        // Format based on role and content
+                        match role {
+                            "User" => {
+                                if content.starts_with("Tool result") {
+                                    println!("📊 {}", content);
+                                } else {
+                                    println!("👤 User: {}", content);
+                                }
+                            },
+                            "Assistant" => {
+                                if content.contains("Using tool:") {
+                                    // Split content by tool uses for better formatting
+                                    for line in content.lines() {
+                                        if line.starts_with("Using tool:") {
+                                            println!("🔧 {}", line);
+                                        } else {
+                                            println!("🤖 Assistant: {}", line);
+                                        }
+                                    }
+                                } else {
+                                    println!("🤖 Assistant: {}", content);
+                                }
+                            },
+                            _ => {
+                                println!("[{role}]: {content}");
+                            }
+                        }
                         println!();
                     }
                 }
