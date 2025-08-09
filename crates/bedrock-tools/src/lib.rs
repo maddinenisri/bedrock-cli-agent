@@ -8,10 +8,14 @@ pub mod fs_tools;
 pub mod search_tools;
 pub mod execute_bash;
 pub mod security;
+pub mod todo_manage;
+pub mod todo_planner;
 
 pub use fs_tools::{FileReadTool, FileWriteTool, FileListTool};
 pub use search_tools::{GrepTool, FindTool, RipgrepTool};
 pub use execute_bash::ExecuteBashTool;
+pub use todo_manage::TodoManageTool;
+pub use todo_planner::TodoPlannerTool;
 
 #[async_trait]
 pub trait Tool: Send + Sync {
@@ -48,6 +52,10 @@ impl ToolRegistry {
         
         // Register execution tools
         registry.register(ExecuteBashTool::new(&workspace)).unwrap();
+        
+        // Register todo management tools
+        registry.register(TodoManageTool::new()).unwrap();
+        registry.register(TodoPlannerTool::new()).unwrap();
         
         registry
     }

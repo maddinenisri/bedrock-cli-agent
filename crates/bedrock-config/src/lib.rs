@@ -28,16 +28,42 @@ pub struct AgentSettings {
     pub temperature: f32,
     #[serde(default = "default_max_tokens")]
     pub max_tokens: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system_prompt: Option<String>,
 }
 
 impl AgentSettings {
     pub fn get_system_prompt(&self) -> String {
-        format!(
-            "You are {}, an AI assistant with access to various tools. \
-            You can execute commands, read and write files, and search through codebases. \
-            Always be helpful and provide clear explanations for your actions.",
+        // Base system prompt with todo_planner instructions
+        let base_prompt = format!(
+            "You are {}, an AI assistant with advanced task planning and execution capabilities.\n\n\
+            ## CRITICAL: Task Planning Protocol\n\n\
+            When given ANY task that involves multiple steps, you MUST use the todo_planner tool:\n\n\
+            ### todo_planner Usage:\n\
+            1. **plan** - Create comprehensive task plan with dependencies\n\
+               - Returns task IDs (UUIDs) and visual progress display\n\
+            2. **start** - Mark task as in progress (use task_id from plan)\n\
+            3. **complete** - Mark task as completed (automatically unblocks dependencies)\n\
+            4. **status** - Show current progress\n\n\
+            ### Workflow:\n\
+            1. Analyze request and create plan with todo_planner\n\
+            2. Save the returned task IDs\n\
+            3. For each task: start → execute → complete\n\
+            4. Check status for newly unblocked tasks\n\n\
+            ### Important:\n\
+            - Task IDs are UUIDs returned by the planner, not descriptions\n\
+            - Dependencies automatically manage blocking/unblocking\n\
+            - High priority tasks should be done first when possible\n\n\
+            You can execute commands, read/write files, and search codebases.",
             self.name
-        )
+        );
+
+        // Append custom prompt if provided
+        if let Some(ref custom_prompt) = self.system_prompt {
+            format!("{}\n\n## Additional Instructions:\n{}", base_prompt, custom_prompt)
+        } else {
+            base_prompt
+        }
     }
 }
 
@@ -228,6 +254,7 @@ impl Default for AgentConfig {
                 model: "us.anthropic.claude-3-5-sonnet-20241022-v2:0".to_string(),
                 temperature: default_temperature(),
                 max_tokens: default_max_tokens(),
+                system_prompt: None,
             },
             aws: AwsSettings {
                 region: "us-east-1".to_string(),
